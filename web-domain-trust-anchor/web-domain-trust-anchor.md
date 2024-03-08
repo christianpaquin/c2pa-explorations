@@ -88,9 +88,15 @@ Thirdly, sign some content using the c2patool using the generated key and settin
 c2patool media/cards.jpg -m manifest.json -o media/cards_created.jpg -f
 ```
 
-Finally, verify the content:
+Finally, verify the content, e.g. the `media/cards_created.jpg`:
 ```
-./verify.sh
+./verify.sh media/cards_created.jpg
 ```
 
-This last script uses the c2patool to extract the signer's certificate and the manifest, retrieves the origin URL from the manifest, downloads the JWK set from the URL, and compares the JWK set certificate with the one in the manifest.
+This last script uses the c2patool to extract the signer's certificate and the manifest, retrieves the origin URL from the manifest, downloads the JWK set from the URL, and compares the JWK set certificate with the one in the manifest. The output should be:
+
+```
+Origin URL: https://christianpaquin.github.io
+Fetching JWKS from: https://christianpaquin.github.io/c2pa.json
+Valid asset signed by https://christianpaquin.github.io
+```
