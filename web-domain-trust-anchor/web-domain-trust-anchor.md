@@ -100,3 +100,8 @@ Origin URL: https://christianpaquin.github.io
 Fetching JWKS from: https://christianpaquin.github.io/c2pa.json
 Valid asset signed by https://christianpaquin.github.io
 ```
+
+## Open questions
+
+* How should the origin URL be identified? A property in the manifest, in the certificate? Which protocol scheme/identifier should be used? See [issue #1](https://github.com/christianpaquin/c2pa-explorations/issues/1)
+* Where in the manifest should the origin URL be located?
