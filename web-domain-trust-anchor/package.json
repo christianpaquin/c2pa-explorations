@@ -1,0 +1,14 @@
+{
+  "name": "web-domain-trust-anchor",
+  "version": "1.0.0",
+  "description": "Sample illustrating how to anchor C2PA trust to a web domain",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^12.0.0"
+  }
+}
