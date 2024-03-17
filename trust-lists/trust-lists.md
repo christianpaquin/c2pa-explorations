@@ -51,8 +51,30 @@ An example trust list file might look like this
 
 The example trust list above has been deployed [here](./sample/sample.json). The [proof-of-concept validator](../web-domain-trust-anchor/web-domain-trust-anchor.md#proof-of-concept) for the web domain trust anchor proposal has been modified to handle this type of trust lists. The [instructions]((../web-domain-trust-anchor/web-domain-trust-anchor.md#proof-of-concept)) are the same to create a key pair and a signed asset, but call the validator with the `trustlist` parameter:
 ```
-node check-origin.js --manifest <manifest_file> --certs <cert_file> --trustlist <trust_list_url>
+./verify.sh <file> <trust_list_url>
 ```
+
+Running (from ../web-domain-trust-anchor/)
+```
+./verify.sh media/cards_created.jpg https://raw.githubusercontent.com/christianpaquin/void/main/c2pa/sample-trust-list.json
+```
+
+results in the following output:
+```
+Fetching trust list from https://raw.githubusercontent.com/christianpaquin/void/main/c2pa/sample-trust-list.json
+Trust list fetched:
+         - name: Sample Trust List
+         - url: https://raw.githubusercontent.com/christianpaquin/void/main/c2pa/sample-trust-list.json
+         - description: A trust list for sample issuers
+         - website: https://github.com/christianpaquin/void
+         - last updated: 2024-03-16T03:47:34Z
+         - number of signers: 2
+         
+Origin URL: https://christianpaquin.github.io
+Fetching JWKS from: https://christianpaquin.github.io/c2pa.json
+Valid asset signed by trusted issuer: Christian Paquin
+```
+
 
 ## ToIP Trust Registries
 
