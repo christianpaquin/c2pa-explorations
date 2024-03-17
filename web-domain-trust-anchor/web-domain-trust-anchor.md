@@ -1,6 +1,6 @@
 # Web Domain Trust Anchor proposal
 
-_draft 0.2_
+_draft 0.3_
 
 The [Creator Assertion WG](https://creator-assertions.github.io/) is developing a specification describing how identity assertions can be attached to a C2PA manifest to identity the entity associated with a digital asset or its transformations. Currently, the main mechanism described in the  [draft specification](https://creator-assertions.github.io/identity/0.1-draft/) is based on X.509 certificates (just like in the core C2PA specification). The trust model defining how these identity credentials can be trusted by a validator is currently undefined.
 
