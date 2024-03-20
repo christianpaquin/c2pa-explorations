@@ -35,23 +35,23 @@ NOTE: this approach has been successfully adopted by the [VCI](https://vci.org) 
 An example trust list file might look like this
 ```JSON
 {
-    "name": "Sample Trust List",
-    "url": "https://raw.githubusercontent.com/christianpaquin/void/main/c2pa/sample-trust-list.json", 
+    "name": "Sample Trust List of JWK set pointers",
+    "download_url": "https://raw.githubusercontent.com/christianpaquin/void/main/c2pa/jwks-pointers-trust-list.json", 
     "description": "A trust list for sample issuers",
     "website": "https://github.com/christianpaquin/c2pa-explorations/blob/main/trust-lists/sample/about.md",
-    "last_updated": "2024-03-16T03:47:34Z",
+    "last_updated": "2024-03-20T03:47:34Z",
     "signers": [
         {
             "id": "Christian Paquin",
             "display_name": "Christian Paquin",
-            "contact": "christianpaquin.github.io/contact",
-            "jwks_url": "christianpaquin.github.io"
+            "contact": "https://christianpaquin.github.io/about/",
+            "jwks_url": "https://christianpaquin.github.io"
         },
         {
             "id": "Example issuer",
             "display_name": "Example",
-            "contact": "example.com/contact",
-            "jwks_url": "example.com"
+            "contact": "https://example.com/contact",
+            "jwks_url": "https://example.com"
         }
     ]
 }
@@ -68,18 +68,18 @@ The example trust list above has been deployed [here](./sample/sample.json). The
 
 Running (from ../web-domain-trust-anchor/)
 ```
-./verify.sh media/cards_created.jpg https://raw.githubusercontent.com/christianpaquin/void/main/c2pa/sample-trust-list.json
+./verify.sh media/cards_created.jpg https://raw.githubusercontent.com/christianpaquin/void/main/c2pa/jwks-pointers-trust-list.json
 ```
 
 results in the following output:
 ```
-Fetching trust list from https://raw.githubusercontent.com/christianpaquin/void/main/c2pa/sample-trust-list.json
+Fetching trust list from https://raw.githubusercontent.com/christianpaquin/void/main/c2pa/jwks-pointers-trust-list.json
 Trust list fetched:
-         - name: Sample Trust List
-         - url: https://raw.githubusercontent.com/christianpaquin/void/main/c2pa/sample-trust-list.json
+         - name: Sample Trust List of JWK set pointers
+         - url: https://raw.githubusercontent.com/christianpaquin/void/main/c2pa/jwks-pointers-trust-list.json
          - description: A trust list for sample issuers
-         - website: https://github.com/christianpaquin/void
-         - last updated: 2024-03-16T03:47:34Z
+         - website: https://github.com/christianpaquin/c2pa-explorations/blob/main/trust-lists/sample/about.md
+         - last updated: 2024-03-20T03:47:34Z
          - number of signers: 2
          
 Origin URL: https://christianpaquin.github.io

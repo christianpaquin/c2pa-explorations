@@ -1,9 +1,9 @@
 {
-    "name": "Sample Trust List",
-    "download_url": "https://raw.githubusercontent.com/christianpaquin/void/main/c2pa/sample-trust-list.json", 
+    "name": "Sample Trust List of JWK set pointers",
+    "download_url": "https://raw.githubusercontent.com/christianpaquin/void/main/c2pa/jwks-pointers-trust-list.json", 
     "description": "A trust list for sample issuers",
     "website": "https://github.com/christianpaquin/c2pa-explorations/blob/main/trust-lists/sample/about.md",
-    "last_updated": "2024-03-16T03:47:34Z",
+    "last_updated": "2024-03-20T03:47:34Z",
     "signers": [
         {
             "id": "Christian Paquin",
