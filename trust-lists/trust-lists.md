@@ -4,7 +4,7 @@ _draft 0.2_
 
 One of the urgent issues to resolve in C2PA is defining trust lists for signers of [identity assertions](https://creator-assertions.github.io/identity/1.0-draft/). The C2PA trust list task force is defining the trust mechanisms for the [C2PA Trust List](https://c2pa.org/specifications/specifications/2.0/specs/C2PA_Specification.html#_trust_lists), but defining how to create domain-specific lists (e.g., for [project Origin](https://www.originproject.info/)) is out of scope for C2PA.
 
-This page explores some design options to define trust lists. In each case, it is the [validator](https://c2pa.org/specifications/specifications/2.0/specs/C2PA_Specification.html#_validator)'s responsibility to trust a specific list (in this note, the validator could be a validation tool deployer or a human user with the ability to select specific trust lists in its implementation).
+This page explores some design options to define trust lists. In each case, it is the [validator](https://c2pa.org/specifications/specifications/2.0/specs/C2PA_Specification.html#_validator)'s responsibility to trust a specific list (in this note, the validator could be a a validation tool, a platform, or a human user with the ability to select specific trust lists in its implementation).
 
 ## List of X.509 certificates
 
@@ -13,9 +13,10 @@ The simplest option (and the one closest to what is described in [section 14.4](
 The list would be encoded in a JSON file containing the following data:
 * `name`: the name of the trust list (e.g., the entity who created the list)
 * `download_url`: the URL where the list can be downloaded/updated from 
-* `description`": the description of the list
+* `description`: the description of the list
 * `website`: a URL to a page to get more information about the trust list
 * `last_updated`: the last update timestamp, represented in the ISO 8601 date-time format (YYYY-MM-DDTHH:MM:SSZ) in UTC
+* `logo`: an optional base64-encoded string representing the trust list's logo, prefixed with `data:[<mime type>];base64,` (loadable in a HTML `<img>` tag)
 * `entities`: an array of trusted entities (signers or anchors) objects with the following data:
   * `name`: the full name of the entity (person or organization)
   * `display_name`: a display name (e.g., a simpler name to show in validators)
