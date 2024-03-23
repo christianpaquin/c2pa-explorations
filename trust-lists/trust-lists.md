@@ -22,7 +22,6 @@ The list would be encoded in a JSON file containing the following data:
   * `display_name`: a display name (e.g., a simpler name to show in validators)
   * `contact`: some contact information (URL, human contact info)
   * `isCA`:  true for CA and root certificates, false for end-entity certificates
-  * `x5tS256`: the SHA-256 fingerprint of certificate as defined in [section 4.6 of RFC 7517](https://www.rfc-editor.org/rfc/rfc7517#section-4.6) 
   * `jwks`: a JSON Web Key set, as defined in [RFC 7517](https://www.rfc-editor.org/rfc/rfc7517.html), containing the list of current _and_ expired (for anchors) certificates (to allow validation of old signatures). Each JWK in the set MUST contain the `kty` property (as required by RFC 7517) and either a `x5c` (containing a PEM-encoded certificate) or `x5t#S256`(encoding a SHA-256 thumbprint). The certificates MUST adhere to the [C2PA certificate profile](https://c2pa.org/specifications/specifications/2.0/specs/C2PA_Specification.html#_certificate_profile).
 
 ## List of JWKS pointers
