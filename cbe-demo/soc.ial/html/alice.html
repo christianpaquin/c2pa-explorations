@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>@alice soc.ial page</title>
+  <link rel="stylesheet" type="text/css" href="styles.css">
+  <style>
+  </style>
+</head>
+
+<body>
+  <!-- Header Section -->
+  <header>
+    <a href="https://soc.ial">soc.ial</a>
+    <input type="text" placeholder="Search soc.ial">
+  </header>
+
+  <!-- Profile Section -->
+  <div id="profile-section">
+    <img id="profile-picture" src="alice.jpg" alt="Profile Picture">
+    <div id="profile-info">
+      <div id="account-name">@alice</div>
+      <div id="bio" contenteditable="false">
+        Peeking through the looking glass!<br />
+      </div>
+<!-- Only show in edit mode
+      <button id="edit-button">Edit Bio</button>
+-->    
+    </div>
+  </div>
+
+  <!-- Posts Section -->
+
+  <div id="posts-section">
+<!-- Only show in edit mode 
+    <h2>Your Posts</h2>
+
+    <div class="post">
+      <input type="text" placeholder="What's on your mind?">
+      <button>Add post</button>
+    </div>
+-->
+    <div class="post">
+      <p>Check out this video posted by the BBC... insane! (<a href="https://www.bbc.com/news/world-europe-68541911">source</a>): 
+        <br>
+        <div class="post-image">
+
+        <video width="320" height="240" controls>
+          <source src="bbc.mp4" type="video/mp4">
+          Your browser does not support the video tag.
+          </video>
+        </div>
+      </p>
+      <div class="interactions">
+        <div class="post-date">
+          <span>2h</span>
+        </div>
+        <div class="likes">
+          <img src="heart-icon.svg" alt="Like Icon">
+          <span>3</span>
+        </div>
+        <div class="comments">
+          <img src="chat-icon.svg" alt="Comment Icon">
+          <span>1</span>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="post">
+      <p>Hack the planet!. Happy birthday Dade Murphy!<br>
+      </p>
+      <br>
+      <div class="post-image">
+        <img src="hack_the_planet.webp" width="30%">
+      </div>
+      <div class="interactions">
+        <div class="post-date">
+          <span>1 day</span>
+        </div>
+        <div class="likes">
+          <img src="heart-icon.svg" alt="Like Icon">
+          <span>2</span>
+        </div>
+        <div class="comments">
+          <img src="chat-icon.svg" alt="Comment Icon">
+          <span>0</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="post">
+      <p><a href="https://defcon.org/">DEFCON 32 announced!</a></p>
+
+      <div class="interactions">
+        <div class="post-date">
+          <span>3 days</span>
+        </div>
+        <div class="likes">
+          <img src="heart-icon.svg" alt="Like Icon">
+          <span>7</span>
+        </div>
+        <div class="comments">
+          <img src="chat-icon.svg" alt="Comment Icon">
+          <span>1</span>
+        </div>
+      </div>
+
+    </div>
+    <!-- Add more posts here -->
+  </div>
+
+  <script>
+    document.getElementById("edit-button").addEventListener("click", function () {
+      var bio = document.getElementById("bio");
+      if (bio.getAttribute("contenteditable") == "false") {
+        bio.setAttribute("contenteditable", "true");
+        bio.focus();
+        this.innerHTML = "Save Bio";
+      } else {
+        bio.setAttribute("contenteditable", "false");
+        this.innerHTML = "Edit Bio";
+        // Save the current bio to localStorage
+        localStorage.setItem('alicebio', bio.innerHTML);
+      }
+    });
+
+    // On page load, check if there's a bio in local storage
+    document.addEventListener("DOMContentLoaded", function () {
+      var storedBio = localStorage.getItem('alicebio');
+      if (storedBio) {
+        // If there is, update the bio section with that data
+        document.getElementById('bio').innerHTML = storedBio;
+      }
+    });
+  </script>
+</body>
+
+</html>

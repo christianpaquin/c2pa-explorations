@@ -1,0 +1,118 @@
+ /* Style the body */
+    body {
+
+    }
+
+
+      #profile-picture {
+          width: 150px;
+          height: 150px;
+          border-radius: 50%;
+      }
+      #account-name {
+          font-size: 24px;
+          font-weight: bold;
+      }
+      #bio {
+          margin-top: 10px;
+      }
+      #edit-button {
+          margin-top: 10px;
+      }
+
+    /* Style the posts section */
+    #posts-section {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+
+    /* Style each individual post */
+    .post {
+	position: relative;
+        width: 80%;
+        border: 1px solid #ccc;
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 5px;
+        box-shadow: 0px 0px 10px #eee;
+        background-color: MediumTurquoise;
+        /* background-color: white;  /* Ensure that posts have a white background */
+    }
+
+    /* Style post titles */
+    .post h3 {
+        margin: 0 0 10px 0;
+    }
+
+    /* Style post content */
+    .post p {
+        margin: 0;
+    }
+
+    /* Style post images */
+    .post img {
+        
+        height: auto; /* Keeps the image's original aspect ratio */
+    }
+
+/* Style post images */
+    .post .post-image {
+        display: flex;
+        justify-content: center;
+    }
+
+/* Style the pin icon */
+    .post .pin-icon {
+        position: absolute;
+        top: 10px; /* Adjust as needed */
+        right: 10px; /* Adjust as needed */
+    }
+
+    .post .post-date {
+        margin-right: auto; /* This pushes the other elements to the right */
+    }
+
+    /* Style the interactions section */
+    .post .interactions {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 10px; /* Adjust as needed */
+	align-items: center;
+    }
+
+    /* Style the likes and comments sections */
+    .post .likes,
+    .post .comments {
+        display: flex;
+        align-items: center;
+        margin-left: 10px; /* Adjust as needed */
+    }
+
+    /* Style the interaction icons */
+    .post .interactions img {
+        width: 20px; /* Adjust as needed */
+        height: auto;
+    }
+
+
+    header {
+        display: flex;
+        justify-content: space-between;
+        padding: 10px;
+        background-color: MediumTurquoise;
+        border-bottom: 1px solid #ccc;
+    }
+
+    /* Style the profile section */
+    #profile-section {
+        display: flex;
+        align-items: center;
+        margin: 20px;
+    }
+
+    /* Style the profile info */
+    #profile-info {
+        margin-left: 20px;
+    }
