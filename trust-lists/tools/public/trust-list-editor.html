@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trust List Editor</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <h1>Trust List Editor</h1>
+    <p>This page allows the creation and editing of trust lists for C2PA signer keys, using the JSON format
+        <a href="https://github.com/christianpaquin/c2pa-explorations/blob/main/trust-lists/trust-lists.md#list-of-x509-certificates">specified here</a>,
+        compatible with the <a href="https://www.iptc.org/origin-trust-list/">project Origin trust list</a>, and can be imported into the <a href="https://github.com/microsoft/c2pa-extension-validator">C2PA browser extension validator</a>.
+    </p>
+
+    <!-- Create New Trust List -->
+    <label for="createNewButton">Create a new trust list</label>
+    <button id="createNewButton" onclick="createNewTrustList()">New</button>
+    <br><br>
+    <!-- Load Trust List -->
+    <label for="fileInput">Load a trust list from file</label>
+    <button onclick="document.getElementById('fileInput').click()">Open</button>
+    <input type="file" id="fileInput" onchange="loadFile(event)" />
+    <br><br>
+
+    <div class="error" id="errorMsg"></div>
+
+    <div id="trustListContent" style="display: none;">
+        <h2>Trust List Info</h2>
+        <table id="trustListInfoTable">
+            <tbody>
+                <tr>
+                    <td><label for="trustListName">Name *</label><span class="info-tooltip">i<span class="tooltip-text">Name of the trust list (e.g., the entity who created the list)</span></span></td>
+                    <td><input type="text" id="trustListName" onchange="validateAndUpdateName(this.value, this, 'info-name', 0)"></td>
+                </tr>
+                <tr>
+                    <td><label for="trustListDownloadUrl">Download URL *</label><span class="info-tooltip">i<span class="tooltip-text">URL where the list can be downloaded/updated from</span></span></td>
+                    <td><input type="text" id="trustListDownloadUrl" onchange="validateAndUpdateURL(this.value, this, 'info-download_url', 0)"></td>
+                </tr>
+                <tr>
+                    <td><label for="trustListDescription">Description *</label><span class="info-tooltip">i<span class="tooltip-text">Description of the list</span></span></td>
+                    <td><input type="text" id="trustListDescription" onchange="validateAndUpdateDescription(this.value, this, 'info', 0)"></td>
+                </tr>
+                <tr>
+                    <td><label for="trustListWebsite">Website *</label><span class="info-tooltip">i<span class="tooltip-text">URL to a page to get more information about the trust list</span></span></td>
+                    <td><input type="text" id="trustListWebsite" onchange="validateAndUpdateURL(this.value, this, 'info-website', 0)"></td>
+                </tr>
+                <!-- TODO: logo_icon-->
+                <tr>
+                    <td><label for="trustListUpdated">Last updated</label><span class="info-tooltip">i<span class="tooltip-text">Last updated timestamp (local time)</span></span></td>
+                    <td><input type="text" id="trustListUpdated" readonly></td>
+                </tr>
+                <tr>
+                    <td><label for="trustListVersion">Version</label><span class="info-tooltip">i<span class="tooltip-text">Version of the trust list schema (current version: “0.1”)</span></span></td>
+                    <td><input type="text" id="trustListVersion" value="0.3" readonly></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>Entities</h2>
+        <table id="entitiesTable">
+            <!-- Dynamic content will be inserted here -->
+        </table>
+        <button onclick="addEntity()">Add Entity</button>
+
+        <br><br>
+        <!-- Save the trust list -->
+        <label for="saveButton">Save trust list</label>
+        <button id="saveButton" onclick="saveToFile()">Save</button>
+    </div>
+
+    <script src="trust-list-editor.js"></script>
+    <script>
+        function updateEntitiesTable() {
+            let html = `
+                <thead>
+                    <tr>
+                        <th>Display name *<span class="info-tooltip">i<span class="tooltip-text">Entity display name</span></span></th>
+                        <th>Contact *<span class="info-tooltip">i<span class="tooltip-text">URL to a page with some contact information for the entity</span></span></th>
+                        <th>isCA *<span class="info-tooltip">i<span class="tooltip-text">True is the entity is a Certificate Authority allowed to issue certificates to other entities, false otherwise</span></span></th>
+                        <th>jwks *<span class="info-tooltip">i<span class="tooltip-text">JSON Web Key Set</span></span></th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+            `;
+
+            trustList.entities.forEach((entity, index) => {
+                html += `
+                    <tr>
+                        <td><input type="text" data-fieldname="display_name" value="${entity.display_name}" onchange="validateAndUpdateName(this.value, this, 'entity-display_name', ${index})"></td>
+                        <td><input type="text" data-fieldname="contact" value="${entity.contact}" onchange="validateAndUpdateURL(this.value, this, 'entity-contact', ${index})"></td>
+                        <td><select data-fieldname="isCA" onchange="validateAndUpdateBoolean(this.value, this, 'entity-isCA', ${index})">
+                            <option value="true" ${entity.isCA ? 'selected' : ''}>True</option>
+                            <option value="false" ${!entity.isCA ? 'selected' : ''}>False</option>
+                        </select></td>
+                        <td><input type="text" data-fieldname="jwks" value="${entity.jwks}" onchange="validateAndUpdateJWKS(this.value, this, 'entity', ${index})"></td>
+                        <td><button onclick="deleteAccount(${index})">Delete</button></td>
+                    </tr>
+                `;
+            });
+
+            html += `</tbody>`;
+            document.getElementById('entitiesTable').innerHTML = html;
+        }
+
+    </script>
+</body>
+
+</html>

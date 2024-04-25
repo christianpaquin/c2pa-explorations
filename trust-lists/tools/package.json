@@ -1,0 +1,17 @@
+{
+  "name": "C2PA tools",
+  "version": "1.0",
+  "description": "C2PA tools",
+  "main": "server.js",
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "shx": "^0.3.4"
+  },
+  "type": "module"
+}

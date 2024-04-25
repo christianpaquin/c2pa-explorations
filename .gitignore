@@ -3,3 +3,4 @@ web-domain-trust-anchor/c2pa.json
 web-domain-trust-anchor/media/cards_created.jpg.certs.pem
 web-domain-trust-anchor/media/cards_created.jpg.manifest.json
 web-domain-trust-anchor/c2pa.private.json
+trust-lists/tools/node_modules
