@@ -152,7 +152,7 @@ function displayTrustList() {
 }
 
 function addEntity() {
-    trustList.entities.push({ display_name: "", contact: "", isCA: false, jwks: ""});
+    trustList.entities.push({ display_name: "", contact: "", isCA: false, jwks: { keys: []} });
     updateEntitiesTable();
 }
 
@@ -174,6 +174,48 @@ function convertIsoToDatetimeLocal(isoString) {
 function deleteEntity(index) {
     trustList.entities.splice(index, 1);
     updateEntitiesTable();
+}
+
+function deleteJWK(entityIndex, keyIndex) {
+    trustList.entities[entityIndex].jwks.keys.splice(keyIndex, 1);
+    updateEntitiesTable();
+}
+
+function addCert(index) {
+    const newJWK = {
+        kty: "",
+        'x5t#S256': "",
+        x5c: []
+    };
+    trustList.entities[index].jwks.keys.push(newJWK);
+    updateEntitiesTable();
+}
+
+function importCert(entityIndex) {
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.onchange = e => {
+        const file = e.target.files[0];
+        const reader = new FileReader();
+        reader.onload = () => {
+            const certData = reader.result;
+            // Process certData to extract JWK fields
+            const newJWK = parseCertToJWK(certData);
+            trustList.entities[entityIndex].jwks.keys.push(newJWK);
+            updateEntitiesTable();
+        };
+        reader.readAsArrayBuffer(file); // or readAsText if PEM
+    };
+    fileInput.click(); // open file dialog
+}
+
+function parseCertToJWK(certData) {
+    // Placeholder for certificate parsing logic
+    return {
+        kty: 'RSA', // Example
+        'x5t#S256': 'exampleThumbprint',
+        x5c: ['exampleCertificate']
+    };
 }
 
 function saveToFile() {

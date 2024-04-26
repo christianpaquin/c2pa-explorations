@@ -73,6 +73,27 @@
 
     <script src="trust-list-editor.js"></script>
     <script>
+        function addJWKTableLines(jwks, index) {
+            let html = '';
+            if (jwks && jwks.keys && jwks.keys.length > 0) {
+                jwks.keys.forEach((jwk, jwkIndex) => {
+                    html += `
+                    <tr>
+                        <td><select data-fieldname="kty" onchange="validateAndUpdateKeyType(this.value, this, 'key-kty', ${index}, ${jwkIndex})">
+                            <option value="RSA" ${jwk.kty === "RSA" ? 'selected' : ''}>RSA</option>
+                            <option value="EC" ${jwk.kty === "EC" ? 'selected' : ''}>EC</option>
+                        </select></td>
+                        <td><input type="text" data-fieldname="x5t" value="${jwk['x5t#S256']}" onchange="validateAndUpdateKeyThumbprint(this.value, this, 'key-x5t', ${index}, ${jwkIndex})"></td>
+                        <td><input type="text" data-fieldname="x5c" value="${(jwk.x5c & jwk.x5c.length > 0) ? jwk.x5c.join(', ') : ''}" onchange="validateAndUpdateKeyChain(this.value, this, 'key-x5t', ${index}, ${jwkIndex})"></td>
+                        <td>
+                            <button onclick="deleteJWK(${index}, ${jwkIndex})">Delete</button>
+                        </td>
+                    </tr>
+                `})
+            }
+            return html;
+        }
+
         function updateEntitiesTable() {
             let html = `
                 <thead>
@@ -82,11 +103,10 @@
                         <th>isCA *<span class="info-tooltip">i<span class="tooltip-text">True is the entity is a Certificate Authority allowed to issue certificates to other entities, false otherwise</span></span></th>
                         <th>jwks *<span class="info-tooltip">i<span class="tooltip-text">JSON Web Key Set</span></span></th>
                         <th>Action</th>
-                    </tr>
-                </thead>
-                <tbody>
+                        </tr>
+                        </thead>
+                        <tbody>
             `;
-
             trustList.entities.forEach((entity, index) => {
                 html += `
                     <tr>
@@ -96,16 +116,26 @@
                             <option value="true" ${entity.isCA ? 'selected' : ''}>True</option>
                             <option value="false" ${!entity.isCA ? 'selected' : ''}>False</option>
                         </select></td>
-                        <td><input type="text" data-fieldname="jwks" value="${entity.jwks}" onchange="validateAndUpdateJWKS(this.value, this, 'entity', ${index})"></td>
-                        <td><button onclick="deleteAccount(${index})">Delete</button></td>
+                        <td>
+                            <table class="jwks-table">
+                                <tr><th>Key Type</th><th>Thumbprint</th><th>Certificate</th><th>Action</th></tr>
+                                ${ addJWKTableLines(entity.jwks, index) }
+                                <tr>
+                                    <td colspan="4">
+                                        <button onclick="addCert(${index})">Add Cert</button>
+                                        <button onclick="importCert(${index})">Import Cert</button>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                        <td><button onclick="deleteEntity(${index})">Delete</button></td>
                     </tr>
                 `;
             });
 
             html += `</tbody>`;
             document.getElementById('entitiesTable').innerHTML = html;
-        }
-
+    }
     </script>
 </body>
 
