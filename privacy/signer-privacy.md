@@ -16,7 +16,7 @@ Note that we only consider the signer’s (a person or organization) privacy her
 
 The current C2PA [core 2.0 specification](https://c2pa.org/specifications/specifications/2.0/specs/C2PA_Specification.html) only supports X.509 certificates to generate (claim) signatures. The [Creator Assertion Working Group](https://creator-assertions.github.io/) is specifying [identity assertions](https://creator-assertions.github.io/identity/1.0-draft/) where additional identity information can be attached to a C2PA asset. Identity assertions could support various credential types; initially, Verifiable Credentials (see [PR 90](https://github.com/creator-assertions/identity-assertion/pull/90)). Additional credential types, such as mDL and SD-JWT could also be added in the future.
 
-### Pseudonymous certificate
+### Pseudonymous certificates
 
 The simplest technique compatible with the current specification is to generate a self-signed X.509 certificate and use it to sign digital assets (i.e., use it as the claim generator certificate). The certificate would then need to be obtained out-of-band by verifiers. This technique doesn't allow signers to prove things about themselves (memberships, entitlements, etc.), it only demonstrates ownership of a public key; it is only useful for scenario #4.
 
@@ -26,7 +26,7 @@ Re-using a X.509 certificate creates linkable signatures: even if a certificate 
 
 To achieve unlinkability, a signer could obtain a new certificate for each signature. A signer could prove an entitlement or membership in an organization by using certificates issued by the organization's CA. This would however be hard to deploy in practice, complicating key management for signing clients. 
 
-### Zero-knowledge proofs over X.509
+### Zero-knowledge proofs over X.509 certificates
 
 A Zero-Knowledge Proof (ZKP) is a cryptographic mechanism allowing someone to prove properties about some data without disclosing the data itself. Given some data signed by a X.509 certificate, a user could prove that the signature and certificate are valid without disclosing the identifiable parts of the certificate (serial number, public key, issuer signature, validity period). A C2PA manifest could be redacted using a ZKP allowing anyone to verify that:
 1. the digital asset hasn't been modified
