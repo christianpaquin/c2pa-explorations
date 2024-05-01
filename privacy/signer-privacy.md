@@ -33,7 +33,7 @@ A Zero-Knowledge Proof (ZKP) is a cryptographic mechanism allowing someone to pr
 2. the signer's cert was valid at signing
 3. the signer cert's CA is trusted (the CA cert would be visible, allowing validators to infer memberships)
 
-This technique is very promising as it is compatible with the current C2PA specification and doesn't require changes to the key management infrastructure. The required cryptographic building blocks are however not currently practical (standards, efficiency) and more research is needed.  
+This technique is very promising as it is compatible with the current C2PA specification and doesn't require changes to the key management infrastructure. Early prototyping efforts show that the approach would be practical for this use case, but more experiments must be conducted to work out the details.  
 
 ### Privacy-preserving Verifiable Credentials
 
