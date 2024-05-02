@@ -2,7 +2,7 @@
 <html>
 
 <head>
-  <title>@alice soc.ial page</title>
+  <title>@jackofclubs soc.ial page</title>
   <link rel="stylesheet" type="text/css" href="styles.css">
   <style>
   </style>
@@ -17,11 +17,11 @@
 
   <!-- Profile Section -->
   <div id="profile-section">
-    <img id="profile-picture" src="alice.jpg" alt="Profile Picture">
+    <img id="profile-picture" src="jackofclubs.jpg" alt="Profile Picture">
     <div id="profile-info">
-      <div id="account-name">@alice</div>
+      <div id="account-name">@jackofclubs</div>
       <div id="bio" contenteditable="false">
-        Peeking through the looking glass!<br />
+        Jack of all trades, but mostly clubs<br />
       </div>
 <!-- Only show in edit mode
       <button id="edit-button">Edit Bio</button>
@@ -41,67 +41,19 @@
     </div>
 -->
     <div class="post">
-      <p>Taylor Swift was lit last night!<br>
+      <p>The new Ebanksy just dropped! Beautiful!<br>
       </p>
       <br>
       <div class="post-image">
-        <img src="concert.webp" width="30%">
+        <img src="ebanksy_flower_girl.png" width="30%">
       </div>
       <div class="interactions">
         <div class="post-date">
-          <span>2h</span>
+          <span>7h</span>
         </div>
         <div class="likes">
           <img src="heart-icon.svg" alt="Like Icon">
-          <span>9</span>
-        </div>
-        <div class="comments">
-          <img src="chat-icon.svg" alt="Comment Icon">
           <span>5</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="post">
-      <p>Check out this video posted by the BBC... insane! (<a href="https://www.bbc.com/news/world-europe-68541911">source</a>): 
-        <br>
-        <div class="post-image">
-
-        <video width="400" controls>
-          <source src="bbc.mp4" type="video/mp4">
-          Your browser does not support the video tag.
-          </video>
-        </div>
-      </p>
-      <div class="interactions">
-        <div class="post-date">
-          <span>1 day</span>
-        </div>
-        <div class="likes">
-          <img src="heart-icon.svg" alt="Like Icon">
-          <span>3</span>
-        </div>
-        <div class="comments">
-          <img src="chat-icon.svg" alt="Comment Icon">
-          <span>3</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="post">
-      <p>The solar eclipse was incredible!!!<br>
-      </p>
-      <br>
-      <div class="post-image">
-        <img src="cbc.jpg" width="30%">
-      </div>
-      <div class="interactions">
-        <div class="post-date">
-          <span>3 days</span>
-        </div>
-        <div class="likes">
-          <img src="heart-icon.svg" alt="Like Icon">
-          <span>4</span>
         </div>
         <div class="comments">
           <img src="chat-icon.svg" alt="Comment Icon">
@@ -111,19 +63,38 @@
     </div>
 
     <div class="post">
-      <p><a href="https://defcon.org/">DEFCON 32 announced!</a></p>
-
+      <div class="post-image">
+        <img src="picasso_sun.jpg" width="30%">
+      </div>
       <div class="interactions">
         <div class="post-date">
-          <span>5 days</span>
+          <span>2 days</span>
         </div>
         <div class="likes">
           <img src="heart-icon.svg" alt="Like Icon">
-          <span>7</span>
+          <span>3</span>
         </div>
         <div class="comments">
           <img src="chat-icon.svg" alt="Comment Icon">
           <span>1</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="post">
+      <p>ART IS LIFE</p>
+
+      <div class="interactions">
+        <div class="post-date">
+          <span>7 days</span>
+        </div>
+        <div class="likes">
+          <img src="heart-icon.svg" alt="Like Icon">
+          <span>9</span>
+        </div>
+        <div class="comments">
+          <img src="chat-icon.svg" alt="Comment Icon">
+          <span>5</span>
         </div>
       </div>
     </div>
@@ -143,13 +114,13 @@
         bio.setAttribute("contenteditable", "false");
         this.innerHTML = "Edit Bio";
         // Save the current bio to localStorage
-        localStorage.setItem('alicebio', bio.innerHTML);
+        localStorage.setItem('jackofclubsbio', bio.innerHTML);
       }
     });
 
     // On page load, check if there's a bio in local storage
     document.addEventListener("DOMContentLoaded", function () {
-      var storedBio = localStorage.getItem('alicebio');
+      var storedBio = localStorage.getItem('jackofclubsbio');
       if (storedBio) {
         // If there is, update the bio section with that data
         document.getElementById('bio').innerHTML = storedBio;
