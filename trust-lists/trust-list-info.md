@@ -6,5 +6,5 @@ _draft 0.1_
 
 Some options where this could be located:
 1. In the COSE signature (e.g., in the protected header); this is where the cert (chain) is stored already. This works both for claim signatures and identity assertions, but requires lower-level integration into the COSE layer.
-2. In the Claim Generator Info. Easy to integrate into existing element, but doesn't work for identity assertions.
+2. In the Claim Generator Info. Easy to integrate into existing element, but doesn't work for identity assertions. This has been prototyped in the [Ebanksy demo](../cbe-demo/ebanksy.art/) (also demonstrating the 4th privacy scenario [described here](../privacy/signer-privacy.md))
 3. In an assertion (or its metadata). This would need to be defined, and could work both for claim signatures and identity assertions.
