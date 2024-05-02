@@ -1,0 +1,54 @@
+body {
+    background-color: black;
+    color: white;
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+}
+
+header {
+    background-color: #333;
+    color: white;
+    padding: 20px;
+    text-align: center;
+}
+
+.content {
+    display: flex;
+    justify-content: space-between; /* This will space out the panels */
+    align-items: center; /* Aligns items vertically in the center */
+    gap: 20px; /* Adds space between each panel */
+    padding: 20px 50px; /* Padding around the content area, increase side padding */
+    background-image: url('gallery.jpg'); /* Double-check this path */
+    background-size: cover;
+    background-position: center; /* Centers the background image */
+    min-height: 300px; /* Ensure there's enough height to display background */
+}
+
+.panel {
+    background-color: rgba(0, 0, 0, 0.8); /* Slightly transparent black */
+    width: 30%;
+    padding: 20px;
+    box-sizing: border-box;
+    margin: 10px 0; /* Adds margin above and below each panel */
+}
+
+footer {
+    background-color: #333;
+    color: white;
+    text-align: center;
+    padding: 10px;
+    position: fixed;
+    width: 100%;
+    bottom: 0;
+}
+
+footer a {
+    color: white;
+    text-decoration: none;
+}
+
+img {
+    width: 100%; /* Makes images expand to fill the panel */
+    height: auto;
+}

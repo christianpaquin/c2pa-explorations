@@ -9,5 +9,5 @@ subjectKeyIdentifier   = hash
 authorityKeyIdentifier = keyid:always
 		
 [alt_names]
-DNS.1   = eban.ksy
-DNS.2   = www.eban.ksy
+DNS.1   = ebanksy.art
+DNS.2   = www.ebanksy.art

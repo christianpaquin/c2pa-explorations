@@ -1,0 +1,46 @@
+body {
+    background-color: #1a1a1a;
+    color: #f5f5f5;
+    font-family: 'Roboto', sans-serif;
+}
+
+h1 {
+    text-align: center;
+    padding-top: 20px;
+}
+
+p {
+    margin: 20px;
+}
+
+.container {
+    display: flex; /* Establishes a flex container */
+    align-items: center; /* Aligns children vertically in the middle */
+    justify-content: space-around; /* Space between the children */
+    margin: 20px;
+}
+
+.image-container {
+    flex: 1; /* Takes up 1 part of the container */
+    padding: 10px;
+}
+
+.image-container img {
+    width: 100%; /* Makes the image responsive */
+    height: auto;
+}
+
+.text-container {
+    flex: 2; /* Takes up 2 parts of the container, making it larger than the image container */
+    padding: 10px;
+    color: #f5f5f5; /* Light text color for readability */
+    font-family: 'Montserrat', sans-serif;
+}
+
+.text-container a:link {
+    color: #00FFFF;
+}
+
+.text-container a:visited {
+    color: #00FFFF;
+}

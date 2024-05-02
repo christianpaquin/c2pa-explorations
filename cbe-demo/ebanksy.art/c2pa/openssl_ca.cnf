@@ -1,0 +1,17 @@
+[ req ]
+distinguished_name = req_distinguished_name
+
+[req_distinguished_name]
+
+[ v3_signer ]
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature
+subjectAltName         = URI:https://www.originproject.info/test
+subjectKeyIdentifier   = hash
+authorityKeyIdentifier = keyid:always
+extendedKeyUsage = 1.3.6.1.5.5.7.3.36
+
+[ v3_ca ]
+basicConstraints = CA:TRUE
+subjectKeyIdentifier   = hash
+authorityKeyIdentifier = keyid:always

@@ -1,0 +1,25 @@
+{
+  "version": "0.1",
+  "name": "Ebanksy Trust List",
+  "download_url": "https://ebanksy.art/trust-list.json",
+  "description": "C2PA Trust list for ebanksy.art",
+  "website": "https://ebanksy.art/trust-list.html",
+  "last_updated": "2024-04-30T20:51:12Z",
+  "entities": [
+    {
+      "display_name": "Ebanksy",
+      "contact": "https://ebanksy.art",
+      "isCA": false,
+      "jwks": {
+        "keys": [
+          {
+            "kty": "EC",
+            "x5c": [
+              "MIICZTCCAcagAwIBAgIUVL+SQMdxiTfxUYnHM7gDEPdclyMwCgYIKoZIzj0EAwMwNDEcMBoGA1UEAwwTRWJhbmtzeSBBcnQgUm9vdCBDQTEUMBIGA1UECgwLRWJhbmtzeSBBcnQwHhcNMjQwNDI2MjE1ODI5WhcNMjkwNDI1MjE1ODI5WjAsMRQwEgYDVQQDDAtFYmFua3N5IEFydDEUMBIGA1UECgwLRWJhbmtzeSBBcnQwdjAQBgcqhkjOPQIBBgUrgQQAIgNiAARpqfe95WQPeERpDKLrmvTNgc9KQE3/1KYJWomoQ2PMeBh1ZJCmUGO7Vto2I7Vi8mbBXsO6Kf31N+s2QhE/Ju6iWvH7AH/1z10Df7YAHcKY+e//hbTc1WLnjb32bnZKwtujgaAwgZ0wCQYDVR0TBAIwADALBgNVHQ8EBAMCB4AwLgYDVR0RBCcwJYYjaHR0cHM6Ly93d3cub3JpZ2lucHJvamVjdC5pbmZvL3Rlc3QwHQYDVR0OBBYEFLnv5qkWnTs1/CLNvIX7dFlzeUK2MB8GA1UdIwQYMBaAFAFFiiGjQS0QYwczb21ujLko68jXMBMGA1UdJQQMMAoGCCsGAQUFBwMkMAoGCCqGSM49BAMDA4GMADCBiAJCAP7nq0z23IC/9pKlo9biQIX1XT2MQMTKemwQgBr1XIBJ+TxCIK3fFv9kUD/sxWhldP9AP636cxAOI+/UpEqTwyVZAkIA0tqOZ9iB5tsHg4nWLr9F1SHIp8dTF2QjbLJ1VHztFWQL6CS3werF9MOizxvKR+3bJY0yR1Zls3QC3frPNUxnUvI="
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
