@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Cert tools</title>
+    </head>
+    <body>
+        <script>
+            function pemToX5c(pem) {
+                let base64String = pem.replace('-----BEGIN CERTIFICATE-----', '');
+                base64String = base64String.replace('-----END CERTIFICATE-----', '');
+                base64String = base64String.replace(/\r?\n|\r/g, '');
+                return base64String;
+            }
+
+            function x5cToPem(x5c) {
+                let formattedString = x5c.match(/.{1,64}/g).join('\n');
+                let pem = '-----BEGIN CERTIFICATE-----\n' + formattedString + '\n-----END CERTIFICATE-----';
+                return pem;
+            }
+
+            function convertPemToX5c() {
+                const pemInput = document.getElementById('pemInput').value;
+                const x5cOutput = pemToX5c(pemInput);
+                document.getElementById('x5cOutput').value = x5cOutput;
+            }
+
+            function convertX5cToPem() {
+                const x5cInput = document.getElementById('x5cInput').value;
+                const pemOutput = x5cToPem(x5cInput);
+                document.getElementById('pemOutput').value = pemOutput;
+            }
+
+            function importFile(inputElementId) {
+                const fileInput = document.createElement('input');
+                fileInput.type = 'file';
+                fileInput.onchange = function(event) {
+                    const file = event.target.files[0];
+                    const reader = new FileReader();
+                    reader.onload = function(event) {
+                        document.getElementById(inputElementId).value = event.target.result;
+                    };
+                    reader.readAsText(file);
+                };
+                fileInput.click();
+            }
+
+            function saveFile(outputElementId, filename) {
+                const textToSave = document.getElementById(outputElementId).value;
+                const blob = new Blob([textToSave], { type: 'text/plain' });
+                const link = document.createElement('a');
+                link.download = filename;
+                link.href = URL.createObjectURL(blob);
+                link.click();
+            }
+        </script>
+        <h1>Cert tools</h1>
+
+        Tools to convert X.509 certificates from one format to another.
+
+        <h2>PEM to x5c</h2>
+        <textarea id="pemInput" rows="10" cols="70" placeholder="Paste PEM certificate here"></textarea><br>
+        <button onclick="importFile('pemInput')">Import PEM</button>
+        <button onclick="convertPemToX5c()">Convert to x5c</button>
+        <button onclick="saveFile('x5cOutput', 'x5c_certificate.txt')">Save x5c</button><br>
+        <textarea id="x5cOutput" rows="5" cols="70" placeholder="x5c output will appear here"></textarea><br>
+
+        <h2>x5c to PEM</h2>
+        <textarea id="x5cInput" rows="5" cols="70" placeholder="Paste x5c certificate here"></textarea><br>
+        <button onclick="importFile('x5cInput')">Import x5c</button>
+        <button onclick="convertX5cToPem()">Convert to PEM</button>
+        <button onclick="saveFile('pemOutput', 'pem_certificate.txt')">Save PEM</button><br>
+        <textarea id="pemOutput" rows="10" cols="70" placeholder="PEM output will appear here"></textarea>
+    </body>
+</html>
