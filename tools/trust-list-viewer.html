@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verified Publisher List Viewer</title>
+    <!-- Import the bundled npm x509 project, as specified in https://www.npmjs.com/package/@peculiar/x509 -->
+    <script src="https://unpkg.com/@peculiar/x509"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .header img {
+            max-width: 100px;
+            margin-right: 20px;
+        }
+        .entity {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        .cert {
+            background-color: #f9f9f9;
+            padding: 10px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Verified Publisher List Viewer</h1>
+    <p>Select a PEM or JSON file
+    <input type="file" id="fileInput">
+    </p>
+    <div class="container">
+        <div class="header">
+            <div>
+                <p id="name"></p>
+                <p id="description"></p>
+                <p id="logo"></p>
+                <p id="website"></p>
+                <p id="last_updated"></p>
+            </div>
+        </div>
+        <div id="entities"></div>
+    </div>
+
+    <script>
+        document.getElementById('fileInput').addEventListener('change', loadFile);
+
+        function loadFile(event) {
+            const file = event.target.files[0];
+            const reader = new FileReader();
+
+            reader.onload = function(event) {
+                const fileContent = event.target.result;
+                if (file.type === "application/json") {
+                    const trustList = JSON.parse(fileContent);
+                    displayTrustList(trustList);
+                } else if (file.type === "application/x-pem-file" || fileContent.includes('-----BEGIN CERTIFICATE-----')) {
+                    displayPEMCerts(fileContent);
+                } else {
+                    alert('Unsupported file format');
+                }
+            };
+
+            reader.readAsText(file);
+        }
+
+        async function parseCertificate(x5c) {
+            const cert = new x509.X509Certificate(x5c);
+            console.log(cert.subject);
+
+            return {
+                subject: cert.subject,
+                issuer: cert.issuer,
+                notBefore: cert.notBefore,
+                notAfter: cert.notAfter
+            };
+        }
+
+        async function displayTrustList(trustList) {
+            document.getElementById('name').textContent = `Name: ${trustList.name}`;
+            document.getElementById('description').textContent = `Description: ${trustList.description}`;
+            document.getElementById('website').innerHTML = `Website: <a href="${trustList.website}">${trustList.website}</a>`;
+            document.getElementById('last_updated').textContent = `Last updated: ${new Date(trustList.last_updated).toLocaleString()}`;
+            document.getElementById('logo').innerHTML = `Logo: <img src="${trustList.logo_icon}" alt="Logo" style="max-width: 50px;">`;
+
+            const entitiesContainer = document.getElementById('entities');
+            entitiesContainer.innerHTML = '';
+
+            for (const entity of trustList.entities) {
+                const entityDiv = document.createElement('div');
+                entityDiv.className = 'entity';
+
+                entityDiv.innerHTML = `
+                    <h2>${entity.display_name}</h2>
+                    <p>Contact: <a href="${entity.contact}">${entity.contact}</a></p>
+                    <p>Is CA: ${entity.isCA}</p>
+                `;
+
+                for (const key of entity.jwks.keys) {
+                    for (const cert of key.x5c) {
+                        const certDetails = await parseCertificate(cert);
+                        const certDiv = document.createElement('div');
+                        certDiv.className = 'cert';
+                        certDiv.innerHTML = `
+                            <p>Subject: ${certDetails.subject}</p>
+                            <p>Issuer: ${certDetails.issuer}</p>
+                            <p>NotBefore: ${certDetails.notBefore}</p>
+                            <p>NotAfter: ${certDetails.notAfter}</p>
+                        `;
+                        entityDiv.appendChild(certDiv);
+                    }
+                }
+
+                entitiesContainer.appendChild(entityDiv);
+            }
+        }
+
+        async function displayPEMCerts(pemContent) {
+            const certs = pemContent.match(/-----BEGIN CERTIFICATE-----[^-]+-----END CERTIFICATE-----/g);
+            const entitiesContainer = document.getElementById('entities');
+            entitiesContainer.innerHTML = '';
+
+            certs.forEach(async (pem, index) => {
+                const base64Cert = pem.replace(/-----BEGIN CERTIFICATE-----/g, '')
+                                      .replace(/-----END CERTIFICATE-----/g, '')
+                                      .replace(/\s+/g, '');
+                const certDetails = await parseCertificate(base64Cert);
+                const certDiv = document.createElement('div');
+                certDiv.className = 'cert';
+                certDiv.innerHTML = `
+                    <h2>Certificate ${index + 1}</h2>
+                    <p>Subject: ${certDetails.subject}</p>
+                    <p>Issuer: ${certDetails.issuer}</p>
+                    <p>NotBefore: ${certDetails.notBefore}</p>
+                    <p>NotAfter: ${certDetails.notAfter}</p>
+                `;
+                entitiesContainer.appendChild(certDiv);
+            });
+        }
+    </script>
+</body>
+</html>
