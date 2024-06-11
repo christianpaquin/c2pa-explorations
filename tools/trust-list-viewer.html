@@ -76,16 +76,89 @@
             reader.readAsText(file);
         }
 
+        async function calculateSha256CertThumbprintFromX5c(x5c) {
+            const der = Uint8Array.from(window.atob(x5c), c => c.charCodeAt(0));
+            const digest = await crypto.subtle.digest('SHA-256', der);
+            const hex = Array.from(new Uint8Array(digest))
+                .map(b => b.toString(16).padStart(2, '0'))
+                .join('');
+            return hex;
+        }
+
+        function parseExtensions(ext) {
+            const extensions = []
+            for (const e of ext) {
+                switch (e.type) {
+                    case '2.5.29.19':
+                        extensions.push(`Basic constraints: ${e.ca ? 'CA' : 'End-entity'} (critical: ${e.critical})`);
+                        break;
+                    default:
+                        console.log('Unknown extension', e)
+                }
+            }
+            return extensions;
+        }
+
+        function x5cToPem(x5c) {
+            return `-----BEGIN CERTIFICATE-----\n${x5c.match(/.{1,64}/g).join('\n')}\n-----END CERTIFICATE-----`;
+        }
+
         async function parseCertificate(x5c) {
             const cert = new x509.X509Certificate(x5c);
-            console.log(cert.subject);
-
-            return {
+            console.log('Parsing x5c', cert);
+            const x5tS256 = await calculateSha256CertThumbprintFromX5c(x5c)
+            cert.publicKey.algorithm;
+            
+            const certInfo = {
+                serialNumber: cert.serialNumber,
                 subject: cert.subject,
                 issuer: cert.issuer,
                 notBefore: cert.notBefore,
-                notAfter: cert.notAfter
+                notAfter: cert.notAfter,
+                x5tS256: x5tS256,
+                pem: x5cToPem(x5c)
             };
+            
+            if (cert.publicKey.algorithm) {
+                let pubKeyAlg = cert.publicKey.algorithm.name;
+                if (cert.publicKey.algorithm.namedCurve) {
+                    pubKeyAlg += ` (${cert.publicKey.algorithm.namedCurve})`;
+                }
+                if (cert.publicKey.algorithm.modulusLength) {
+                    pubKeyAlg += ` (${cert.publicKey.algorithm.modulusLength} bits)`;
+                }
+                certInfo.pubKeyAlg = pubKeyAlg;
+            }
+
+            if (cert.extensions) {
+                certInfo.extensions = parseExtensions(cert.extensions);;
+            }
+
+            return certInfo;
+        }
+
+        function createCertElement(cert, index) {
+            const certDiv = document.createElement('div');
+            const header = (index !== undefined) ? `<h3>Certificate ${index + 1}</h3>` : ``;
+            // create a list of extensions
+            let ext = ``;
+            if (cert.extensions) {
+                ext = `<p><b>Extensions</b>:<ul><li>${cert.extensions.join('</li><li>')}</li></ul></p>`;
+            }
+            certDiv.className = 'cert';
+            certDiv.innerHTML = `
+                ${header}
+                <p><a href="data:application/x-pem-file;base64,${btoa(cert.pem)}" download="certificate.pem">(download PEM)</a></p>
+                <p><b>Serial number</b>: ${cert.serialNumber}</p>
+                <p><b>Subject name</b>: ${cert.subject}</p>
+                <p><b>Issuer name</b>: ${cert.issuer}</p>
+                <p><b>Not before</b>: ${cert.notBefore}</p>
+                <p><b>Not after</b>: ${cert.notAfter}</p>
+                <p><b>Public key algorithm</b>: ${cert.pubKeyAlg}</p>
+                <p><b>SHA256 thumbprint</b>: ${cert.x5tS256}</p>
+                ${ext}
+            `;
+            return certDiv;
         }
 
         async function displayTrustList(trustList) {
@@ -104,21 +177,14 @@
 
                 entityDiv.innerHTML = `
                     <h2>${entity.display_name}</h2>
-                    <p>Contact: <a href="${entity.contact}">${entity.contact}</a></p>
-                    <p>Is CA: ${entity.isCA}</p>
+                    <p><b>Contact</b>: <a href="${entity.contact}">${entity.contact}</a></p>
+                    <p><b>Is CA</b>: ${entity.isCA}</p>
                 `;
 
                 for (const key of entity.jwks.keys) {
                     for (const cert of key.x5c) {
                         const certDetails = await parseCertificate(cert);
-                        const certDiv = document.createElement('div');
-                        certDiv.className = 'cert';
-                        certDiv.innerHTML = `
-                            <p>Subject: ${certDetails.subject}</p>
-                            <p>Issuer: ${certDetails.issuer}</p>
-                            <p>NotBefore: ${certDetails.notBefore}</p>
-                            <p>NotAfter: ${certDetails.notAfter}</p>
-                        `;
+                        const certDiv = createCertElement(certDetails);
                         entityDiv.appendChild(certDiv);
                     }
                 }
@@ -137,15 +203,7 @@
                                       .replace(/-----END CERTIFICATE-----/g, '')
                                       .replace(/\s+/g, '');
                 const certDetails = await parseCertificate(base64Cert);
-                const certDiv = document.createElement('div');
-                certDiv.className = 'cert';
-                certDiv.innerHTML = `
-                    <h2>Certificate ${index + 1}</h2>
-                    <p>Subject: ${certDetails.subject}</p>
-                    <p>Issuer: ${certDetails.issuer}</p>
-                    <p>NotBefore: ${certDetails.notBefore}</p>
-                    <p>NotAfter: ${certDetails.notAfter}</p>
-                `;
+                const certDiv = createCertElement(certDetails, index);
                 entitiesContainer.appendChild(certDiv);
             });
         }
