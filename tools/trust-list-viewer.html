@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>Verified Publisher List Viewer</title>
     <!-- Import the bundled npm x509 project, as specified in https://www.npmjs.com/package/@peculiar/x509 -->
     <script src="https://unpkg.com/@peculiar/x509"></script>
@@ -48,6 +48,7 @@
                 <p id="description"></p>
                 <p id="logo"></p>
                 <p id="website"></p>
+                <p id="download_url"></p>
                 <p id="last_updated"></p>
             </div>
         </div>
@@ -56,6 +57,14 @@
 
     <script>
         document.getElementById('fileInput').addEventListener('change', loadFile);
+
+        window.addEventListener('load', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const url = urlParams.get('url');
+            if (url) {
+                fetchTrustList(url);
+            }
+        });
 
         function loadFile(event) {
             const file = event.target.files[0];
@@ -76,6 +85,29 @@
             reader.readAsText(file);
         }
 
+        async function fetchTrustList(url) {
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                const contentType = response.headers.get('content-type');
+                const fileContent = await response.text();
+
+                if (contentType.includes('application/json')) {
+                    const trustList = JSON.parse(fileContent);
+                    displayTrustList(trustList);
+                } else if (contentType.includes('application/x-pem-file') || fileContent.includes('-----BEGIN CERTIFICATE-----')) {
+                    displayPEMCerts(fileContent);
+                } else {
+                    alert('Unsupported file format');
+                }
+            } catch (error) {
+                console.error('Error fetching trust list:', error);
+                alert('Error fetching trust list: ' + error.message);
+            }
+        }
+
         async function calculateSha256CertThumbprintFromX5c(x5c) {
             const der = Uint8Array.from(window.atob(x5c), c => c.charCodeAt(0));
             const digest = await crypto.subtle.digest('SHA-256', der);
@@ -90,8 +122,14 @@
             for (const e of ext) {
                 switch (e.type) {
                     case '2.5.29.19':
-                        extensions.push(`Basic constraints: ${e.ca ? 'CA' : 'End-entity'} (critical: ${e.critical})`);
+                        extensions.push(`Basic constraints: ${e.ca ? 'CA' : 'End-entity'} ${e.critical ? '(critical)' : ''}`);
                         break;
+                    case '2.5.29.15':
+                    extensions.push(`Key usage: ${e.usages} ${e.critical ? '(critical)' : ''}`);
+                    break;
+                    case '2.5.29.37':
+                    extensions.push(`Extended key usage: ${e.usages} ${e.critical ? '(critical)' : ''}`);
+                    break;
                     default:
                         console.log('Unknown extension', e)
                 }
@@ -165,6 +203,7 @@
             document.getElementById('name').textContent = `Name: ${trustList.name}`;
             document.getElementById('description').textContent = `Description: ${trustList.description}`;
             document.getElementById('website').innerHTML = `Website: <a href="${trustList.website}">${trustList.website}</a>`;
+            document.getElementById('download_url').innerHTML = `Download URL: <a href="${trustList.download_url}">${trustList.download_url}</a>`;
             document.getElementById('last_updated').textContent = `Last updated: ${new Date(trustList.last_updated).toLocaleString()}`;
             document.getElementById('logo').innerHTML = `Logo: <img src="${trustList.logo_icon}" alt="Logo" style="max-width: 50px;">`;
 
@@ -207,6 +246,7 @@
                 entitiesContainer.appendChild(certDiv);
             });
         }
+
     </script>
 </body>
 </html>
