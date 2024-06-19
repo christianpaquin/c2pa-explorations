@@ -97,10 +97,8 @@
                 if (contentType.includes('application/json')) {
                     const trustList = JSON.parse(fileContent);
                     displayTrustList(trustList);
-                } else if (contentType.includes('application/x-pem-file') || fileContent.includes('-----BEGIN CERTIFICATE-----')) {
-                    displayPEMCerts(fileContent);
                 } else {
-                    alert('Unsupported file format');
+                    displayPEMCerts(fileContent);
                 }
             } catch (error) {
                 console.error('Error fetching trust list:', error);
