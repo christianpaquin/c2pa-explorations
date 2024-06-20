@@ -94,11 +94,14 @@
                 const contentType = response.headers.get('content-type');
                 const fileContent = await response.text();
 
-                if (contentType.includes('application/json')) {
+                if (contentType && contentType.includes('application/json')) {
                     const trustList = JSON.parse(fileContent);
                     displayTrustList(trustList);
-                } else {
+                } else if ((contentType && contentType.includes('application/x-pem-file')) ||
+                            fileContent.includes('-----BEGIN CERTIFICATE-----')) {
                     displayPEMCerts(fileContent);
+                } else {
+                    alert('Unsupported file format');
                 }
             } catch (error) {
                 console.error('Error fetching trust list:', error);
