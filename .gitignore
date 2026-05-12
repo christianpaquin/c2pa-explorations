@@ -4,3 +4,8 @@ web-domain-trust-anchor/media/cards_created.jpg.certs.pem
 web-domain-trust-anchor/media/cards_created.jpg.manifest.json
 web-domain-trust-anchor/c2pa.private.json
 cbe-demo/ebanksy.art/c2pa/tmp
+
+# CRLite PoC: build output + per-run private signing key (sample artifact/jws/pubjwk are fine to commit)
+crlite/aggregator/target/
+crlite/validator/target/
+crlite/sample/publisher.key.jwk

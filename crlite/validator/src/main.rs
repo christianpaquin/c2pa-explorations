@@ -1,0 +1,476 @@
+use anyhow::{anyhow, bail, Context, Result};
+use base64::Engine as _;
+use clap::Parser;
+use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use serde::Deserialize;
+use std::fs;
+use std::path::PathBuf;
+use time::format_description::well_known::Rfc3339;
+use time::OffsetDateTime;
+use x509_parser::certificate::X509Certificate;
+use x509_parser::extensions::ParsedExtension;
+use x509_parser::parse_x509_certificate;
+use x509_parser::pem::Pem;
+
+#[derive(Deserialize)]
+struct TstContainer {
+    #[serde(rename = "tstTokens")]
+    tst_tokens: Vec<TstToken>,
+}
+
+#[derive(Deserialize)]
+struct TstToken {
+    #[serde(with = "serde_bytes")]
+    val: Vec<u8>,
+}
+
+const B64URL: base64::engine::GeneralPurpose = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+
+#[derive(Parser, Debug)]
+#[command(version, about = "Verify a C2PA asset's claim-signing cert against a CRLite-style revocation artifact")]
+struct Args {
+    /// Signed revocation artifact (JWS).
+    #[arg(long)]
+    artifact: PathBuf,
+
+    /// Publisher's public key (Ed25519 OKP JWK).
+    #[arg(long)]
+    pubkey: PathBuf,
+
+    /// Days past `next_update` to still accept the artifact.
+    #[arg(long, default_value_t = 30i64)]
+    grace_days: i64,
+
+    /// Asset to validate.
+    asset: PathBuf,
+}
+
+#[derive(Deserialize)]
+struct Artifact {
+    version: u32,
+    trust_list_version: String,
+    generated_at: String,
+    next_update: String,
+    #[serde(default)]
+    partial: Option<bool>,
+    entries: Vec<Entry>,
+}
+
+#[derive(Deserialize, Clone)]
+struct Entry {
+    scope: String,
+    issuer_ski: String,
+    serial: String,
+    revocation_date: String,
+}
+
+#[derive(Deserialize)]
+struct PublicJwk {
+    kty: String,
+    crv: String,
+    x: String,
+}
+
+#[derive(Deserialize)]
+struct JwsHeader {
+    alg: String,
+}
+
+enum Outcome {
+    NotFound,
+    Revoked { date: OffsetDateTime },
+    RevokedAfterSig { date: OffsetDateTime },
+}
+
+fn main() -> Result<()> {
+    let args = Args::parse();
+
+    let artifact = load_and_verify_artifact(&args.artifact, &args.pubkey, args.grace_days)?;
+    println!("Artifact:");
+    println!("  trust_list_version: {}", artifact.trust_list_version);
+    println!("  generated_at:       {}", artifact.generated_at);
+    println!("  next_update:        {}", artifact.next_update);
+    println!(
+        "  entries:            {} ({})",
+        artifact.entries.len(),
+        if artifact.partial.unwrap_or(false) {
+            "partial"
+        } else {
+            "complete"
+        }
+    );
+    println!();
+
+    println!("Reading C2PA manifest: {}", args.asset.display());
+    let reader = c2pa::Reader::default()
+        .with_file(&args.asset)
+        .with_context(|| format!("c2pa::Reader::with_file({})", args.asset.display()))?;
+    let manifest = reader
+        .active_manifest()
+        .ok_or_else(|| anyhow!("no active manifest in asset"))?;
+    let sig_info = manifest
+        .signature_info()
+        .ok_or_else(|| anyhow!("manifest has no signature info"))?;
+
+    let t_sig = match sig_info.time.as_ref() {
+        Some(t) => {
+            let dt = OffsetDateTime::parse(t, &Rfc3339)
+                .with_context(|| format!("parsing signing time '{}'", t))?;
+            println!("Signing time (T_sig, from trusted timestamp): {}", t);
+            dt
+        }
+        None => {
+            let now = OffsetDateTime::now_utc();
+            println!(
+                "WARNING: no trusted timestamp; falling back to T_sig = now ({})",
+                now.format(&Rfc3339)?
+            );
+            now
+        }
+    };
+
+    let chain = parse_pem_chain(sig_info.cert_chain().as_bytes())?;
+    let ee_der = chain
+        .first()
+        .ok_or_else(|| anyhow!("empty cert chain in manifest"))?;
+    let (_, ee) = parse_x509_certificate(ee_der)?;
+    let issuer_ski = extract_aki(&ee).ok_or_else(|| {
+        anyhow!("claim-signing cert lacks AKI extension; cannot determine issuer SKI")
+    })?;
+    let serial = ee.tbs_certificate.serial.to_bytes_be();
+    let issuer_ski_hex = hex::encode(&issuer_ski);
+    let serial_hex = hex::encode(&serial);
+
+    println!("Claim-signing cert:");
+    println!("  subject:    {}", ee.subject());
+    println!("  issuer SKI: {}", issuer_ski_hex);
+    println!("  serial:     {}", serial_hex);
+    println!();
+
+    let outcome = lookup(&artifact, "anchors", &issuer_ski_hex, &serial_hex, t_sig)?;
+    print_outcome("Claim-signing cert", &outcome);
+
+    println!();
+    let cose_sign1_bytes = load_cose_sign1_bytes(&args.asset).ok().flatten();
+    let tsa_outcome = match extract_tsa_cert_der(cose_sign1_bytes.as_deref()) {
+        Ok(Some(tsa_der)) => {
+            let (_, tsa_cert) = parse_x509_certificate(&tsa_der)?;
+            let tsa_issuer_ski = extract_aki(&tsa_cert).ok_or_else(|| {
+                anyhow!("TSA cert lacks AKI extension; cannot determine issuer SKI")
+            })?;
+            let tsa_serial = tsa_cert.tbs_certificate.serial.to_bytes_be();
+            let tsa_issuer_ski_hex = hex::encode(&tsa_issuer_ski);
+            let tsa_serial_hex = hex::encode(&tsa_serial);
+            println!("TSA cert:");
+            println!("  subject:    {}", tsa_cert.subject());
+            println!("  issuer SKI: {}", tsa_issuer_ski_hex);
+            println!("  serial:     {}", tsa_serial_hex);
+            println!();
+            Some(lookup(
+                &artifact,
+                "tsa",
+                &tsa_issuer_ski_hex,
+                &tsa_serial_hex,
+                t_sig,
+            )?)
+        }
+        Ok(None) => {
+            println!("TSA cert revocation check: skipped (no sigTst2 in COSE signature)");
+            None
+        }
+        Err(e) => {
+            println!("TSA cert revocation check: skipped (extract failed: {:#})", e);
+            None
+        }
+    };
+    if let Some(o) = &tsa_outcome {
+        print_outcome("TSA cert", o);
+    }
+
+    let claim_revoked = matches!(outcome, Outcome::Revoked { .. });
+    let tsa_revoked = matches!(tsa_outcome, Some(Outcome::Revoked { .. }));
+    if claim_revoked || tsa_revoked {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+/// Locate the active manifest's `c2pa.signature` JUMBF data box and return the
+/// raw COSE_Sign1_Tagged bytes it contains.
+fn load_cose_sign1_bytes(asset: &PathBuf) -> Result<Option<Vec<u8>>> {
+    use jumbf::parser::SuperBox;
+
+    let jumbf = c2pa::jumbf_io::load_jumbf_from_file(asset)
+        .with_context(|| format!("loading JUMBF from {}", asset.display()))?;
+    let (outer, _) = SuperBox::from_slice(&jumbf)
+        .map_err(|e| anyhow!("parsing outer JUMBF SuperBox: {:?}", e))?;
+    find_signature_in_super(&outer)
+        .map(Some)
+        .ok_or_else(|| anyhow!("no c2pa.signature box found in JUMBF"))
+}
+
+fn find_signature_in_super(sb: &jumbf::parser::SuperBox) -> Option<Vec<u8>> {
+    use jumbf::parser::ChildBox;
+    let label = sb.desc.label.as_deref();
+    if label == Some("c2pa.signature") {
+        if let Some(db) = sb.data_box() {
+            return Some(db.data.to_vec());
+        }
+    }
+    for child in &sb.child_boxes {
+        if let ChildBox::SuperBox(inner) = child {
+            if let Some(found) = find_signature_in_super(inner) {
+                return Some(found);
+            }
+        }
+    }
+    None
+}
+
+/// Extract the TSA signing cert DER from a COSE_Sign1's `sigTst2` unprotected header.
+///
+/// Layout: sigTst2 value is CBOR `{ "tstTokens": [ { "val": <DER bytes> } ] }`. The
+/// DER bytes are an RFC 3161 TimeStampToken — a CMS ContentInfo wrapping SignedData.
+/// We extract the first certificate carried in SignedData.certificates as the TSA cert
+/// (heuristic; production would resolve via SignerInfo.sid).
+fn extract_tsa_cert_der(cose_sig: Option<&[u8]>) -> Result<Option<Vec<u8>>> {
+    use cms::cert::CertificateChoices;
+    use cms::content_info::ContentInfo;
+    use cms::signed_data::SignedData;
+    use der::{Decode, Encode};
+
+    use coset::{CborSerializable, TaggedCborSerializable};
+
+    let Some(cose_bytes) = cose_sig else {
+        return Ok(None);
+    };
+    // C2PA stores the signature as a COSE_Sign1_Tagged structure; try tagged first,
+    // fall back to untagged.
+    let sign1 = coset::CoseSign1::from_tagged_slice(cose_bytes)
+        .or_else(|_| coset::CoseSign1::from_slice(cose_bytes))
+        .map_err(|e| anyhow!("coset parse: {:?}", e))?;
+
+    let mut is_v2 = false;
+    let sigtst_value = sign1
+        .unprotected
+        .rest
+        .iter()
+        .find_map(|(label, value)| match label {
+            coset::Label::Text(t) if t == "sigTst2" => {
+                is_v2 = true;
+                Some(value)
+            }
+            coset::Label::Text(t) if t == "sigTst" => {
+                is_v2 = false;
+                Some(value)
+            }
+            _ => None,
+        });
+    let Some(sigtst_value) = sigtst_value else {
+        return Ok(None);
+    };
+
+    let mut buf = Vec::new();
+    ciborium::into_writer(sigtst_value, &mut buf).context("re-serializing sigTst value")?;
+    let container: TstContainer =
+        ciborium::from_reader(&buf[..]).context("parsing sigTst as TstContainer")?;
+    let token = container
+        .tst_tokens
+        .first()
+        .ok_or_else(|| anyhow!("sigTst contained no tst_tokens"))?;
+
+    // sigTst2 carries a TimeStampToken (ContentInfo); sigTst carries a TimeStampResp
+    // which wraps a TimeStampToken — peel one ASN.1 SEQUENCE layer in that case.
+    let ci_der: Vec<u8> = if is_v2 {
+        token.val.clone()
+    } else {
+        unwrap_tst_resp_to_token(&token.val)?
+    };
+
+    let ci = ContentInfo::from_der(&ci_der).context("parsing TimeStampToken ContentInfo")?;
+    let sd_der = ci.content.to_der().context("re-encoding SignedData")?;
+    let sd = SignedData::from_der(&sd_der).context("decoding SignedData")?;
+    let certs = sd
+        .certificates
+        .ok_or_else(|| anyhow!("SignedData has no certificates"))?;
+    let cert_choice = certs
+        .0
+        .iter()
+        .next()
+        .ok_or_else(|| anyhow!("SignedData.certificates is empty"))?;
+    let cert = match cert_choice {
+        CertificateChoices::Certificate(c) => c,
+        other => bail!("unsupported CertificateChoices variant: {:?}", other),
+    };
+    let cert_der = cert.to_der().context("re-encoding TSA cert to DER")?;
+    Ok(Some(cert_der))
+}
+
+fn load_and_verify_artifact(
+    artifact_path: &PathBuf,
+    pubkey_path: &PathBuf,
+    grace_days: i64,
+) -> Result<Artifact> {
+    let jws = fs::read_to_string(artifact_path)
+        .with_context(|| format!("reading artifact {}", artifact_path.display()))?;
+    let jws = jws.trim();
+    let parts: Vec<&str> = jws.split('.').collect();
+    if parts.len() != 3 {
+        bail!("malformed JWS: expected 3 dot-separated parts, got {}", parts.len());
+    }
+    let (header_b64, payload_b64, sig_b64) = (parts[0], parts[1], parts[2]);
+
+    let header_bytes = B64URL.decode(header_b64)?;
+    let header: JwsHeader = serde_json::from_slice(&header_bytes)?;
+    if header.alg != "EdDSA" {
+        bail!("unsupported JWS alg: {}", header.alg);
+    }
+
+    let pubkey_json = fs::read_to_string(pubkey_path)
+        .with_context(|| format!("reading pubkey {}", pubkey_path.display()))?;
+    let pubjwk: PublicJwk = serde_json::from_str(&pubkey_json)?;
+    if pubjwk.kty != "OKP" || pubjwk.crv != "Ed25519" {
+        bail!(
+            "unsupported public key: kty={}, crv={}",
+            pubjwk.kty,
+            pubjwk.crv
+        );
+    }
+    let pubkey_bytes = B64URL.decode(&pubjwk.x)?;
+    let pubkey_arr: [u8; 32] = pubkey_bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| anyhow!("Ed25519 public key not 32 bytes"))?;
+    let verifying_key = VerifyingKey::from_bytes(&pubkey_arr)
+        .map_err(|e| anyhow!("invalid Ed25519 public key: {}", e))?;
+
+    let sig_bytes = B64URL.decode(sig_b64)?;
+    let sig_arr: [u8; 64] = sig_bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| anyhow!("Ed25519 signature not 64 bytes"))?;
+    let signature = Signature::from_bytes(&sig_arr);
+
+    let signing_input = format!("{}.{}", header_b64, payload_b64);
+    verifying_key
+        .verify(signing_input.as_bytes(), &signature)
+        .map_err(|e| anyhow!("JWS signature verification failed: {}", e))?;
+
+    let payload_bytes = B64URL.decode(payload_b64)?;
+    let artifact: Artifact = serde_json::from_slice(&payload_bytes)?;
+    if artifact.version != 1 {
+        bail!("unsupported artifact version: {}", artifact.version);
+    }
+
+    let now = OffsetDateTime::now_utc();
+    let next_update = OffsetDateTime::parse(&artifact.next_update, &Rfc3339)
+        .context("parsing artifact next_update")?;
+    let deadline = next_update + time::Duration::days(grace_days);
+    if now > deadline {
+        bail!(
+            "artifact is stale: now={}, next_update + {}-day grace = {}",
+            now.format(&Rfc3339)?,
+            grace_days,
+            deadline.format(&Rfc3339)?
+        );
+    }
+
+    Ok(artifact)
+}
+
+fn lookup(
+    artifact: &Artifact,
+    scope: &str,
+    issuer_ski_hex: &str,
+    serial_hex: &str,
+    t_sig: OffsetDateTime,
+) -> Result<Outcome> {
+    for e in &artifact.entries {
+        if e.scope == scope && e.issuer_ski == issuer_ski_hex && e.serial == serial_hex {
+            let rev = OffsetDateTime::parse(&e.revocation_date, &Rfc3339)
+                .with_context(|| format!("parsing revocation_date '{}'", e.revocation_date))?;
+            if t_sig >= rev {
+                return Ok(Outcome::Revoked { date: rev });
+            } else {
+                return Ok(Outcome::RevokedAfterSig { date: rev });
+            }
+        }
+    }
+    Ok(Outcome::NotFound)
+}
+
+fn print_outcome(label: &str, o: &Outcome) {
+    match o {
+        Outcome::NotFound => println!("{} revocation check: PASS (not in revocation artifact)", label),
+        Outcome::Revoked { date } => println!(
+            "{} revocation check: FAIL (revoked at {}, before/at signing time)",
+            label,
+            date.format(&Rfc3339).unwrap_or_default()
+        ),
+        Outcome::RevokedAfterSig { date } => println!(
+            "{} revocation check: PASS (revoked at {}, after signing time — signature was made while the cert was still valid)",
+            label,
+            date.format(&Rfc3339).unwrap_or_default()
+        ),
+    }
+}
+
+fn parse_pem_chain(buf: &[u8]) -> Result<Vec<Vec<u8>>> {
+    let mut out = Vec::new();
+    for pem in Pem::iter_from_buffer(buf) {
+        let pem = pem.map_err(|e| anyhow!("PEM parse: {}", e))?;
+        out.push(pem.contents);
+    }
+    Ok(out)
+}
+
+/// For the v1 `sigTst` form, the value is a DER-encoded TimeStampResp:
+///   TimeStampResp ::= SEQUENCE { status PKIStatusInfo, timeStampToken ContentInfo OPTIONAL }
+/// Skip past PKIStatusInfo to return the TimeStampToken (ContentInfo) DER bytes.
+fn unwrap_tst_resp_to_token(resp: &[u8]) -> Result<Vec<u8>> {
+    if resp.is_empty() || resp[0] != 0x30 {
+        bail!("TimeStampResp: expected outer SEQUENCE");
+    }
+    let (outer_len, outer_hdr) = parse_der_length(&resp[1..])?;
+    let outer_content = &resp[1 + outer_hdr..1 + outer_hdr + outer_len];
+    if outer_content.is_empty() || outer_content[0] != 0x30 {
+        bail!("TimeStampResp: expected PKIStatusInfo SEQUENCE");
+    }
+    let (pki_len, pki_hdr) = parse_der_length(&outer_content[1..])?;
+    let after_pki = &outer_content[1 + pki_hdr + pki_len..];
+    if after_pki.is_empty() || after_pki[0] != 0x30 {
+        bail!("TimeStampResp: expected TimeStampToken SEQUENCE after PKIStatusInfo");
+    }
+    let (ct_len, ct_hdr) = parse_der_length(&after_pki[1..])?;
+    Ok(after_pki[..1 + ct_hdr + ct_len].to_vec())
+}
+
+fn parse_der_length(input: &[u8]) -> Result<(usize, usize)> {
+    if input.is_empty() {
+        bail!("DER: empty length field");
+    }
+    let first = input[0];
+    if first & 0x80 == 0 {
+        return Ok((first as usize, 1));
+    }
+    let count = (first & 0x7f) as usize;
+    if count == 0 || count > 4 || input.len() < 1 + count {
+        bail!("DER: bad length encoding");
+    }
+    let mut len = 0usize;
+    for i in 0..count {
+        len = (len << 8) | input[1 + i] as usize;
+    }
+    Ok((len, 1 + count))
+}
+
+fn extract_aki(cert: &X509Certificate) -> Option<Vec<u8>> {
+    for ext in cert.extensions() {
+        if let ParsedExtension::AuthorityKeyIdentifier(aki) = ext.parsed_extension() {
+            if let Some(ki) = aki.key_identifier.as_ref() {
+                return Some(ki.0.to_vec());
+            }
+        }
+    }
+    None
+}
