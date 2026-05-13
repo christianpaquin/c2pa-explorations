@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use base64::Engine as _;
 use clap::Parser;
-use ed25519_dalek::{Signer, SigningKey};
+use p256::ecdsa::{signature::Signer, Signature, SigningKey};
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -79,6 +79,7 @@ struct PublicJwk<'a> {
     kty: &'a str,
     crv: &'a str,
     x: String,
+    y: String,
 }
 
 #[derive(Serialize)]
@@ -86,6 +87,7 @@ struct PrivateJwk<'a> {
     kty: &'a str,
     crv: &'a str,
     x: String,
+    y: String,
     d: String,
 }
 
@@ -198,14 +200,22 @@ fn main() -> Result<()> {
     let pretty = serde_json::to_string_pretty(&artifact)?;
     let compact = serde_json::to_vec(&artifact)?;
 
-    let signing_key = SigningKey::generate(&mut OsRng);
+    let signing_key = SigningKey::random(&mut OsRng);
     let verifying_key = signing_key.verifying_key();
-    let pub_b64 = B64URL.encode(verifying_key.as_bytes());
-    let priv_b64 = B64URL.encode(signing_key.to_bytes());
-    let kid = pub_b64.clone();
+    let encoded_point = verifying_key.to_encoded_point(false);
+    let x_bytes = encoded_point
+        .x()
+        .ok_or_else(|| anyhow!("P-256 verifying key missing x coordinate"))?;
+    let y_bytes = encoded_point
+        .y()
+        .ok_or_else(|| anyhow!("P-256 verifying key missing y coordinate"))?;
+    let x_b64 = B64URL.encode(x_bytes);
+    let y_b64 = B64URL.encode(y_bytes);
+    let d_b64 = B64URL.encode(signing_key.to_bytes());
+    let kid = format!("{}.{}", x_b64, y_b64);
 
     let header = JwsHeader {
-        alg: "EdDSA",
+        alg: "ES256",
         typ: "JWS",
         kid: &kid,
     };
@@ -213,7 +223,7 @@ fn main() -> Result<()> {
     let header_b64 = B64URL.encode(&header_bytes);
     let payload_b64 = B64URL.encode(&compact);
     let signing_input = format!("{}.{}", header_b64, payload_b64);
-    let signature = signing_key.sign(signing_input.as_bytes());
+    let signature: Signature = signing_key.sign(signing_input.as_bytes());
     let sig_b64 = B64URL.encode(signature.to_bytes());
     let jws = format!("{}.{}.{}", header_b64, payload_b64, sig_b64);
 
@@ -227,18 +237,20 @@ fn main() -> Result<()> {
     fs::write(
         &pubjwk_path,
         serde_json::to_string_pretty(&PublicJwk {
-            kty: "OKP",
-            crv: "Ed25519",
-            x: pub_b64.clone(),
+            kty: "EC",
+            crv: "P-256",
+            x: x_b64.clone(),
+            y: y_b64.clone(),
         })?,
     )?;
     fs::write(
         &privjwk_path,
         serde_json::to_string_pretty(&PrivateJwk {
-            kty: "OKP",
-            crv: "Ed25519",
-            x: pub_b64,
-            d: priv_b64,
+            kty: "EC",
+            crv: "P-256",
+            x: x_b64,
+            y: y_b64,
+            d: d_b64,
         })?,
     )?;
 

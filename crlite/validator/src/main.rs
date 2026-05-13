@@ -1,7 +1,8 @@
 use anyhow::{anyhow, bail, Context, Result};
 use base64::Engine as _;
 use clap::Parser;
-use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use p256::ecdsa::{signature::Verifier, Signature, VerifyingKey};
+use p256::EncodedPoint;
 use serde::Deserialize;
 use std::fs;
 use std::path::PathBuf;
@@ -33,7 +34,7 @@ struct Args {
     #[arg(long)]
     artifact: PathBuf,
 
-    /// Publisher's public key (Ed25519 OKP JWK).
+    /// Publisher's public key (P-256 EC JWK).
     #[arg(long)]
     pubkey: PathBuf,
 
@@ -69,6 +70,7 @@ struct PublicJwk {
     kty: String,
     crv: String,
     x: String,
+    y: String,
 }
 
 #[derive(Deserialize)]
@@ -322,34 +324,38 @@ fn load_and_verify_artifact(
 
     let header_bytes = B64URL.decode(header_b64)?;
     let header: JwsHeader = serde_json::from_slice(&header_bytes)?;
-    if header.alg != "EdDSA" {
+    if header.alg != "ES256" {
         bail!("unsupported JWS alg: {}", header.alg);
     }
 
     let pubkey_json = fs::read_to_string(pubkey_path)
         .with_context(|| format!("reading pubkey {}", pubkey_path.display()))?;
     let pubjwk: PublicJwk = serde_json::from_str(&pubkey_json)?;
-    if pubjwk.kty != "OKP" || pubjwk.crv != "Ed25519" {
+    if pubjwk.kty != "EC" || pubjwk.crv != "P-256" {
         bail!(
             "unsupported public key: kty={}, crv={}",
             pubjwk.kty,
             pubjwk.crv
         );
     }
-    let pubkey_bytes = B64URL.decode(&pubjwk.x)?;
-    let pubkey_arr: [u8; 32] = pubkey_bytes
+    let x_bytes = B64URL.decode(&pubjwk.x)?;
+    let y_bytes = B64URL.decode(&pubjwk.y)?;
+    let x_arr: [u8; 32] = x_bytes
         .as_slice()
         .try_into()
-        .map_err(|_| anyhow!("Ed25519 public key not 32 bytes"))?;
-    let verifying_key = VerifyingKey::from_bytes(&pubkey_arr)
-        .map_err(|e| anyhow!("invalid Ed25519 public key: {}", e))?;
+        .map_err(|_| anyhow!("P-256 x coordinate not 32 bytes"))?;
+    let y_arr: [u8; 32] = y_bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| anyhow!("P-256 y coordinate not 32 bytes"))?;
+    let encoded_point =
+        EncodedPoint::from_affine_coordinates(&x_arr.into(), &y_arr.into(), false);
+    let verifying_key = VerifyingKey::from_encoded_point(&encoded_point)
+        .map_err(|e| anyhow!("invalid P-256 public key: {}", e))?;
 
     let sig_bytes = B64URL.decode(sig_b64)?;
-    let sig_arr: [u8; 64] = sig_bytes
-        .as_slice()
-        .try_into()
-        .map_err(|_| anyhow!("Ed25519 signature not 64 bytes"))?;
-    let signature = Signature::from_bytes(&sig_arr);
+    let signature = Signature::from_slice(&sig_bytes)
+        .map_err(|e| anyhow!("invalid ES256 signature: {}", e))?;
 
     let signing_input = format!("{}.{}", header_b64, payload_b64);
     verifying_key

@@ -22,7 +22,7 @@ Exit status: `0` if the revocation check passed (cert not in the artifact, or re
 
 ## What it does
 
-1. Loads `artifact.jws` and verifies its detached EdDSA signature against `publisher.jwk`.
+1. Loads `artifact.jws` and verifies its ES256 (ECDSA P-256) signature against `publisher.jwk`.
 2. Enforces freshness: rejects the artifact if `now > next_update + grace_days`.
 3. Opens the asset with `c2pa::Reader::from_file`, takes the active manifest's `SignatureInfo`.
 4. Parses the PEM cert chain, extracts the claim-signing (leaf) certificate's AKI (= the issuer SKI) and serial number.

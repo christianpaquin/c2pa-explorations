@@ -5,7 +5,7 @@ Proof-of-concept aggregator for the [CRLite for C2PA proposal](../crlite.md). Gi
 1. Loads each certificate in each bundle.
 2. Extracts CRL Distribution Point (CDP) URIs from each cert and downloads the referenced CRLs.
 3. Parses each CRL into a deduplicated table of `(scope, issuer SKI, serial, revocation date)` entries.
-4. Generates a fresh Ed25519 key pair (unless one is supplied), produces a signed JSON revocation artifact, and writes the artifact, its JWS, and the publisher's public key to an output directory.
+4. Generates a fresh ECDSA P-256 key pair (unless one is supplied), produces a signed JSON revocation artifact, and writes the artifact, its JWS, and the publisher's public key to an output directory.
 
 The artifact format is documented in [`../crlite.md`](../crlite.md).
 
@@ -33,8 +33,8 @@ Add `--inject-entries <file>` to merge synthetic entries (e.g. for demo or test 
 Outputs in `--out`:
 
 * `artifact.json` — pretty-printed revocation artifact (for inspection).
-* `artifact.jws` — compact EdDSA JWS over the canonical JSON encoding of the artifact (this is the signed truth).
-* `publisher.jwk` — Ed25519 public key in JWK form, to be embedded in or distributed alongside a validator.
+* `artifact.jws` — compact ES256 JWS over the canonical JSON encoding of the artifact (this is the signed truth).
+* `publisher.jwk` — P-256 public key in JWK form (`kty: "EC"`, `crv: "P-256"`), to be embedded in or distributed alongside a validator.
 * `publisher.key.jwk` — the matching private key. **Do not redistribute.** Only emitted when a fresh key was generated.
 
 ## Caveats

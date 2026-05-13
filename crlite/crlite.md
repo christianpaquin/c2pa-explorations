@@ -2,7 +2,7 @@
 
 _draft 0.1_
 
-This document proposes a [CRLite](https://github.com/mozilla/crlite)-inspired mechanism for proving non-revocation of C2PA signing certificates. The goal is to replace per-signature OCSP stapling with a single, periodically-refreshed, signed revocation artifact published alongside the [C2PA Trust List](https://raw.githubusercontent.com/c2pa-org/conformance-public/refs/heads/main/trust-list/C2PA-TRUST-LIST.pem). Validators consult the local artifact at validation time and need no network call to a CA.
+This document proposes a [CRLite](https://github.com/mozilla/crlite)-inspired mechanism for proving non-revocation of C2PA signing certificates. The goal is to replace per-signature OCSP stapling with a single, periodically-refreshed, signed revocation artifact published alongside the [C2PA Trust List](https://c2pa.org/conformance/). Validators consult the local artifact at validation time and need no network call to a CA.
 
 This is exploratory work intended to demonstrate feasibility through a proof-of-concept; any actual spec change would be a separate, later effort.
 
@@ -44,7 +44,7 @@ WebPKI CRLite answers: "Is this certificate revoked **now**?" A revoked TLS cert
 
 C2PA needs to answer: "Was this certificate valid **at signing time `T_sig`**, as attested by a trusted [RFC 3161](https://www.rfc-editor.org/rfc/rfc3161) timestamp?" A claim signed in 2024 by a cert revoked in 2026 must still validate, provided the revocation was not for `keyCompromise` (which by [RFC 5280 §5.3.2](https://www.rfc-editor.org/rfc/rfc5280#section-5.3.2) implicates earlier signatures as well).
 
-This proposal adopts a **revocation-date-aware** model: rather than a pure set-membership filter answering yes/no, the artifact stores the revocation date for each revoked certificate. A validator with signing time `T_sig` treats a certificate as revoked iff an entry exists for it AND `T_sig ≥ revocation_date`.
+This proposal adopts a **revocation-date-aware** model: rather than a pure set-membership filter answering yes/no, the artifact stores the revocation date for each revoked certificate. A validator with signing time `T_sig` treats a certificate as revoked if and only if an entry exists for it AND `T_sig ≥ revocation_date`.
 
 #### Alternatives considered
 
@@ -73,7 +73,7 @@ For the proof of concept the artifact is a JSON object — easy to inspect, easy
 }
 ```
 
-The artifact is signed by the publisher. For the PoC this is a freshly minted demo key; in production the publisher would be the C2PA conformance program, using a key whose certificate is well-known to validators (analogous to the trust list signing key). The signing format for the PoC is a detached JWS over the canonical JSON encoding of the artifact; the production CBOR version would use COSE_Sign1.
+The artifact is signed by the publisher. For the PoC this is a freshly minted demo key; in production the publisher would be the C2PA conformance program, using a key whose certificate is well-known to validators (analogous to the trust list signing key). The signing format for the PoC is an ES256 (ECDSA P-256) JWS over the canonical JSON encoding of the artifact; the production CBOR version would use COSE_Sign1.
 
 `issuer_ski` is chosen over the issuer's distinguished name because it is short, unambiguous, and directly matches the AKI extension on end-entity certificates, which is what the validator already has in hand.
 
