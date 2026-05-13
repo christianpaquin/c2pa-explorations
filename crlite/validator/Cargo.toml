@@ -1,0 +1,25 @@
+[package]
+name = "crlite-validator"
+version = "0.1.0"
+edition = "2021"
+description = "Proof-of-concept C2PA validator wrapper that consults a CRLite-inspired revocation artifact"
+license = "MIT"
+
+[dependencies]
+anyhow = "1"
+base64 = "0.22"
+c2pa = { version = "0.83", features = ["file_io"] }
+ciborium = "0.2"
+clap = { version = "4", features = ["derive"] }
+cms = "0.2"
+coset = "0.3"
+der = { version = "0.7", features = ["alloc"] }
+jumbf = "0.7"
+hex = "0.4"
+p256 = { version = "0.13", features = ["ecdsa", "pem", "pkcs8"] }
+serde = { version = "1", features = ["derive"] }
+serde_bytes = "0.11"
+serde_json = "1"
+time = { version = "0.3", features = ["formatting", "parsing"] }
+x509-cert = { version = "0.2", features = ["std"] }
+x509-parser = "0.16"
