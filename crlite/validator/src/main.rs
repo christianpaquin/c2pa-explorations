@@ -1,9 +1,11 @@
 use anyhow::{anyhow, bail, Context, Result};
 use base64::Engine as _;
-use clap::Parser;
+use clap::{Parser, ValueEnum};
+use coset::{CborSerializable, TaggedCborSerializable};
 use p256::ecdsa::{signature::Verifier, Signature, VerifyingKey};
 use p256::EncodedPoint;
 use serde::Deserialize;
+use serde_repr::Deserialize_repr;
 use std::fs;
 use std::path::PathBuf;
 use time::format_description::well_known::Rfc3339;
@@ -27,10 +29,18 @@ struct TstToken {
 
 const B64URL: base64::engine::GeneralPurpose = base64::engine::general_purpose::URL_SAFE_NO_PAD;
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+enum UncoveredPolicy {
+    /// Accept (exit 0) with a warning when the issuer is not covered and no staple is present.
+    Warn,
+    /// Refuse (exit 1) when the issuer is not covered and no staple is present.
+    Refuse,
+}
+
 #[derive(Parser, Debug)]
-#[command(version, about = "Verify a C2PA asset's claim-signing cert against a CRLite-style revocation artifact")]
+#[command(version, about = "Verify a C2PA asset's certs against an Aggregated Revocation Artifact (ARA)")]
 struct Args {
-    /// Signed revocation artifact (JWS).
+    /// Signed revocation artifact (COSE_Sign1, CBOR).
     #[arg(long)]
     artifact: PathBuf,
 
@@ -42,27 +52,58 @@ struct Args {
     #[arg(long, default_value_t = 30i64)]
     grace_days: i64,
 
+    /// What to do when the issuer is not in the coverage set and no OCSP staple is present.
+    #[arg(long, value_enum, default_value_t = UncoveredPolicy::Warn)]
+    uncovered_policy: UncoveredPolicy,
+
     /// Asset to validate.
     asset: PathBuf,
 }
 
+// ---- artifact (CBOR / COSE_Sign1 payload, kebab-case per the CDDL) ----------
+
 #[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
 struct Artifact {
     version: u32,
-    trust_list_version: String,
-    generated_at: String,
-    next_update: String,
+    trust_list_id: String,
+    generated_at: i64,
+    next_update: i64,
     #[serde(default)]
     partial: Option<bool>,
+    #[serde(default)]
+    covered_issuers: Vec<Coverage>,
     entries: Vec<Entry>,
 }
 
 #[derive(Deserialize, Clone)]
+#[serde(rename_all = "kebab-case")]
+struct Coverage {
+    scope: Scope,
+    #[serde(with = "serde_bytes")]
+    issuer_ski: Vec<u8>,
+    #[allow(dead_code)]
+    last_crl_update: i64,
+    #[serde(default)]
+    status: Option<String>,
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "kebab-case")]
 struct Entry {
-    scope: String,
-    issuer_ski: String,
-    serial: String,
-    revocation_date: String,
+    scope: Scope,
+    #[serde(with = "serde_bytes")]
+    issuer_ski: Vec<u8>,
+    #[serde(with = "serde_bytes")]
+    serial: Vec<u8>,
+    revocation_date: i64,
+}
+
+#[derive(Deserialize_repr, Clone, Copy, PartialEq, Eq, Debug)]
+#[repr(u8)]
+enum Scope {
+    Anchors = 0,
+    Tsa = 1,
 }
 
 #[derive(Deserialize)]
@@ -73,15 +114,31 @@ struct PublicJwk {
     y: String,
 }
 
-#[derive(Deserialize)]
-struct JwsHeader {
-    alg: String,
+/// Whether the issuer is authoritatively covered by the artifact.
+enum CoverageStatus {
+    Fresh,
+    Stale,
+    NotCovered,
 }
 
 enum Outcome {
-    NotFound,
+    GoodStanding,
     Revoked { date: OffsetDateTime },
     RevokedAfterSig { date: OffsetDateTime },
+    CoverageStale,
+    NotCoveredStaple,
+    NotCoveredWarn,
+    NotCoveredRefuse,
+}
+
+impl Outcome {
+    /// True if this outcome means the revocation check failed (process should exit non-zero).
+    fn is_failure(&self) -> bool {
+        matches!(
+            self,
+            Outcome::Revoked { .. } | Outcome::CoverageStale | Outcome::NotCoveredRefuse
+        )
+    }
 }
 
 fn main() -> Result<()> {
@@ -89,11 +146,12 @@ fn main() -> Result<()> {
 
     let artifact = load_and_verify_artifact(&args.artifact, &args.pubkey, args.grace_days)?;
     println!("Artifact:");
-    println!("  trust_list_version: {}", artifact.trust_list_version);
-    println!("  generated_at:       {}", artifact.generated_at);
-    println!("  next_update:        {}", artifact.next_update);
+    println!("  trust_list_id:   {}", artifact.trust_list_id);
+    println!("  generated_at:    {}", iso(artifact.generated_at));
+    println!("  next_update:     {}", iso(artifact.next_update));
+    println!("  covered issuers: {}", artifact.covered_issuers.len());
     println!(
-        "  entries:            {} ({})",
+        "  entries:         {} ({})",
         artifact.entries.len(),
         if artifact.partial.unwrap_or(false) {
             "partial"
@@ -131,6 +189,12 @@ fn main() -> Result<()> {
         }
     };
 
+    let cose_sign1_bytes = load_cose_sign1_bytes(&args.asset).ok().flatten();
+    let staple_present = cose_sign1_bytes
+        .as_deref()
+        .map(has_ocsp_staple)
+        .unwrap_or(false);
+
     let chain = parse_pem_chain(sig_info.cert_chain().as_bytes())?;
     let ee_der = chain
         .first()
@@ -140,20 +204,25 @@ fn main() -> Result<()> {
         anyhow!("claim-signing cert lacks AKI extension; cannot determine issuer SKI")
     })?;
     let serial = ee.tbs_certificate.serial.to_bytes_be();
-    let issuer_ski_hex = hex::encode(&issuer_ski);
-    let serial_hex = hex::encode(&serial);
 
     println!("Claim-signing cert:");
     println!("  subject:    {}", ee.subject());
-    println!("  issuer SKI: {}", issuer_ski_hex);
-    println!("  serial:     {}", serial_hex);
+    println!("  issuer SKI: {}", hex::encode(&issuer_ski));
+    println!("  serial:     {}", hex::encode(&serial));
     println!();
 
-    let outcome = lookup(&artifact, "anchors", &issuer_ski_hex, &serial_hex, t_sig)?;
+    let outcome = evaluate(
+        &artifact,
+        Scope::Anchors,
+        &issuer_ski,
+        &serial,
+        t_sig,
+        staple_present,
+        args.uncovered_policy,
+    );
     print_outcome("Claim-signing cert", &outcome);
 
     println!();
-    let cose_sign1_bytes = load_cose_sign1_bytes(&args.asset).ok().flatten();
     let tsa_outcome = match extract_tsa_cert_der(cose_sign1_bytes.as_deref()) {
         Ok(Some(tsa_der)) => {
             let (_, tsa_cert) = parse_x509_certificate(&tsa_der)?;
@@ -161,20 +230,20 @@ fn main() -> Result<()> {
                 anyhow!("TSA cert lacks AKI extension; cannot determine issuer SKI")
             })?;
             let tsa_serial = tsa_cert.tbs_certificate.serial.to_bytes_be();
-            let tsa_issuer_ski_hex = hex::encode(&tsa_issuer_ski);
-            let tsa_serial_hex = hex::encode(&tsa_serial);
             println!("TSA cert:");
             println!("  subject:    {}", tsa_cert.subject());
-            println!("  issuer SKI: {}", tsa_issuer_ski_hex);
-            println!("  serial:     {}", tsa_serial_hex);
+            println!("  issuer SKI: {}", hex::encode(&tsa_issuer_ski));
+            println!("  serial:     {}", hex::encode(&tsa_serial));
             println!();
-            Some(lookup(
+            Some(evaluate(
                 &artifact,
-                "tsa",
-                &tsa_issuer_ski_hex,
-                &tsa_serial_hex,
+                Scope::Tsa,
+                &tsa_issuer_ski,
+                &tsa_serial,
                 t_sig,
-            )?)
+                staple_present,
+                args.uncovered_policy,
+            ))
         }
         Ok(None) => {
             println!("TSA cert revocation check: skipped (no sigTst2 in COSE signature)");
@@ -189,12 +258,98 @@ fn main() -> Result<()> {
         print_outcome("TSA cert", o);
     }
 
-    let claim_revoked = matches!(outcome, Outcome::Revoked { .. });
-    let tsa_revoked = matches!(tsa_outcome, Some(Outcome::Revoked { .. }));
-    if claim_revoked || tsa_revoked {
+    let failed = outcome.is_failure() || tsa_outcome.map(|o| o.is_failure()).unwrap_or(false);
+    if failed {
         std::process::exit(1);
     }
     Ok(())
+}
+
+/// Apply the v0.2 coverage-set decision logic for one certificate.
+fn evaluate(
+    artifact: &Artifact,
+    scope: Scope,
+    issuer_ski: &[u8],
+    serial: &[u8],
+    t_sig: OffsetDateTime,
+    staple_present: bool,
+    policy: UncoveredPolicy,
+) -> Outcome {
+    match coverage_status(artifact, scope, issuer_ski) {
+        CoverageStatus::NotCovered => {
+            if staple_present {
+                Outcome::NotCoveredStaple
+            } else {
+                match policy {
+                    UncoveredPolicy::Warn => Outcome::NotCoveredWarn,
+                    UncoveredPolicy::Refuse => Outcome::NotCoveredRefuse,
+                }
+            }
+        }
+        CoverageStatus::Stale => Outcome::CoverageStale,
+        CoverageStatus::Fresh => {
+            for e in &artifact.entries {
+                if e.scope == scope && e.issuer_ski == issuer_ski && e.serial == serial {
+                    let rev = OffsetDateTime::from_unix_timestamp(e.revocation_date)
+                        .unwrap_or(OffsetDateTime::UNIX_EPOCH);
+                    return if t_sig >= rev {
+                        Outcome::Revoked { date: rev }
+                    } else {
+                        Outcome::RevokedAfterSig { date: rev }
+                    };
+                }
+            }
+            Outcome::GoodStanding
+        }
+    }
+}
+
+fn coverage_status(artifact: &Artifact, scope: Scope, issuer_ski: &[u8]) -> CoverageStatus {
+    for c in &artifact.covered_issuers {
+        if c.scope == scope && c.issuer_ski == issuer_ski {
+            return if c.status.as_deref() == Some("stale") {
+                CoverageStatus::Stale
+            } else {
+                CoverageStatus::Fresh
+            };
+        }
+    }
+    CoverageStatus::NotCovered
+}
+
+fn print_outcome(label: &str, o: &Outcome) {
+    match o {
+        Outcome::GoodStanding => println!(
+            "{} revocation check: PASS (issuer covered, not revoked)",
+            label
+        ),
+        Outcome::Revoked { date } => println!(
+            "{} revocation check: FAIL (revoked at {}, before/at signing time)",
+            label,
+            iso_dt(date)
+        ),
+        Outcome::RevokedAfterSig { date } => println!(
+            "{} revocation check: PASS (revoked at {}, after signing time — signature was made while the cert was still valid)",
+            label,
+            iso_dt(date)
+        ),
+        Outcome::CoverageStale => println!(
+            "{} revocation check: FAIL (issuer covered but its CRL data is stale — cannot assert non-revocation)",
+            label
+        ),
+        Outcome::NotCoveredStaple => println!(
+            "{} revocation check: PASS (issuer not covered; an OCSP staple is present — legacy path; staple consultation is out of scope for this PoC)",
+            label
+        ),
+        Outcome::NotCoveredWarn => println!(
+            "{} revocation check: PASS with WARNING (issuer not covered and no staple — cannot assert non-revocation; --uncovered-policy=warn)",
+            label
+        ),
+        Outcome::NotCoveredRefuse => println!(
+            "{} revocation check: FAIL (issuer not covered and no staple; --uncovered-policy=refuse)",
+            label
+        ),
+    }
 }
 
 /// Locate the active manifest's `c2pa.signature` JUMBF data box and return the
@@ -229,6 +384,22 @@ fn find_signature_in_super(sb: &jumbf::parser::SuperBox) -> Option<Vec<u8>> {
     None
 }
 
+/// Detect whether the COSE_Sign1 carries a stapled OCSP response. C2PA carries
+/// these in the unprotected header under the `rVals` label. We only check for
+/// presence (the legacy-path signal); consulting the staple is out of scope.
+fn has_ocsp_staple(cose_bytes: &[u8]) -> bool {
+    let Ok(sign1) = coset::CoseSign1::from_tagged_slice(cose_bytes)
+        .or_else(|_| coset::CoseSign1::from_slice(cose_bytes))
+    else {
+        return false;
+    };
+    sign1
+        .unprotected
+        .rest
+        .iter()
+        .any(|(label, _)| matches!(label, coset::Label::Text(t) if t == "rVals"))
+}
+
 /// Extract the TSA signing cert DER from a COSE_Sign1's `sigTst2` unprotected header.
 ///
 /// Layout: sigTst2 value is CBOR `{ "tstTokens": [ { "val": <DER bytes> } ] }`. The
@@ -240,8 +411,6 @@ fn extract_tsa_cert_der(cose_sig: Option<&[u8]>) -> Result<Option<Vec<u8>>> {
     use cms::content_info::ContentInfo;
     use cms::signed_data::SignedData;
     use der::{Decode, Encode};
-
-    use coset::{CborSerializable, TaggedCborSerializable};
 
     let Some(cose_bytes) = cose_sig else {
         return Ok(None);
@@ -313,64 +482,42 @@ fn load_and_verify_artifact(
     pubkey_path: &PathBuf,
     grace_days: i64,
 ) -> Result<Artifact> {
-    let jws = fs::read_to_string(artifact_path)
+    let cose_bytes = fs::read(artifact_path)
         .with_context(|| format!("reading artifact {}", artifact_path.display()))?;
-    let jws = jws.trim();
-    let parts: Vec<&str> = jws.split('.').collect();
-    if parts.len() != 3 {
-        bail!("malformed JWS: expected 3 dot-separated parts, got {}", parts.len());
-    }
-    let (header_b64, payload_b64, sig_b64) = (parts[0], parts[1], parts[2]);
 
-    let header_bytes = B64URL.decode(header_b64)?;
-    let header: JwsHeader = serde_json::from_slice(&header_bytes)?;
-    if header.alg != "ES256" {
-        bail!("unsupported JWS alg: {}", header.alg);
+    let sign1 = coset::CoseSign1::from_tagged_slice(&cose_bytes)
+        .or_else(|_| coset::CoseSign1::from_slice(&cose_bytes))
+        .map_err(|e| anyhow!("parsing artifact COSE_Sign1: {:?}", e))?;
+
+    let alg = sign1.protected.header.alg.clone();
+    if alg != Some(coset::RegisteredLabelWithPrivate::Assigned(coset::iana::Algorithm::ES256)) {
+        bail!("unsupported COSE alg: {:?} (expected ES256)", alg);
     }
 
-    let pubkey_json = fs::read_to_string(pubkey_path)
-        .with_context(|| format!("reading pubkey {}", pubkey_path.display()))?;
-    let pubjwk: PublicJwk = serde_json::from_str(&pubkey_json)?;
-    if pubjwk.kty != "EC" || pubjwk.crv != "P-256" {
-        bail!(
-            "unsupported public key: kty={}, crv={}",
-            pubjwk.kty,
-            pubjwk.crv
-        );
-    }
-    let x_bytes = B64URL.decode(&pubjwk.x)?;
-    let y_bytes = B64URL.decode(&pubjwk.y)?;
-    let x_arr: [u8; 32] = x_bytes
-        .as_slice()
-        .try_into()
-        .map_err(|_| anyhow!("P-256 x coordinate not 32 bytes"))?;
-    let y_arr: [u8; 32] = y_bytes
-        .as_slice()
-        .try_into()
-        .map_err(|_| anyhow!("P-256 y coordinate not 32 bytes"))?;
-    let encoded_point =
-        EncodedPoint::from_affine_coordinates(&x_arr.into(), &y_arr.into(), false);
-    let verifying_key = VerifyingKey::from_encoded_point(&encoded_point)
-        .map_err(|e| anyhow!("invalid P-256 public key: {}", e))?;
+    let verifying_key = load_pubkey(pubkey_path)?;
+    sign1
+        .verify_signature(b"", |sig, data| {
+            let signature = Signature::from_slice(sig)
+                .map_err(|e| anyhow!("invalid ES256 signature: {}", e))?;
+            verifying_key
+                .verify(data, &signature)
+                .map_err(|e| anyhow!("COSE signature verification failed: {}", e))
+        })
+        .context("verifying artifact signature")?;
 
-    let sig_bytes = B64URL.decode(sig_b64)?;
-    let signature = Signature::from_slice(&sig_bytes)
-        .map_err(|e| anyhow!("invalid ES256 signature: {}", e))?;
-
-    let signing_input = format!("{}.{}", header_b64, payload_b64);
-    verifying_key
-        .verify(signing_input.as_bytes(), &signature)
-        .map_err(|e| anyhow!("JWS signature verification failed: {}", e))?;
-
-    let payload_bytes = B64URL.decode(payload_b64)?;
-    let artifact: Artifact = serde_json::from_slice(&payload_bytes)?;
+    let payload = sign1
+        .payload
+        .as_ref()
+        .ok_or_else(|| anyhow!("artifact COSE_Sign1 has no payload"))?;
+    let artifact: Artifact =
+        ciborium::from_reader(payload.as_slice()).context("CBOR-decoding artifact payload")?;
     if artifact.version != 1 {
         bail!("unsupported artifact version: {}", artifact.version);
     }
 
     let now = OffsetDateTime::now_utc();
-    let next_update = OffsetDateTime::parse(&artifact.next_update, &Rfc3339)
-        .context("parsing artifact next_update")?;
+    let next_update = OffsetDateTime::from_unix_timestamp(artifact.next_update)
+        .context("artifact next_update out of range")?;
     let deadline = next_update + time::Duration::days(grace_days);
     if now > deadline {
         bail!(
@@ -384,41 +531,37 @@ fn load_and_verify_artifact(
     Ok(artifact)
 }
 
-fn lookup(
-    artifact: &Artifact,
-    scope: &str,
-    issuer_ski_hex: &str,
-    serial_hex: &str,
-    t_sig: OffsetDateTime,
-) -> Result<Outcome> {
-    for e in &artifact.entries {
-        if e.scope == scope && e.issuer_ski == issuer_ski_hex && e.serial == serial_hex {
-            let rev = OffsetDateTime::parse(&e.revocation_date, &Rfc3339)
-                .with_context(|| format!("parsing revocation_date '{}'", e.revocation_date))?;
-            if t_sig >= rev {
-                return Ok(Outcome::Revoked { date: rev });
-            } else {
-                return Ok(Outcome::RevokedAfterSig { date: rev });
-            }
-        }
+fn load_pubkey(pubkey_path: &PathBuf) -> Result<VerifyingKey> {
+    let pubkey_json = fs::read_to_string(pubkey_path)
+        .with_context(|| format!("reading pubkey {}", pubkey_path.display()))?;
+    let pubjwk: PublicJwk = serde_json::from_str(&pubkey_json)?;
+    if pubjwk.kty != "EC" || pubjwk.crv != "P-256" {
+        bail!("unsupported public key: kty={}, crv={}", pubjwk.kty, pubjwk.crv);
     }
-    Ok(Outcome::NotFound)
+    let x_bytes = B64URL.decode(&pubjwk.x)?;
+    let y_bytes = B64URL.decode(&pubjwk.y)?;
+    let x_arr: [u8; 32] = x_bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| anyhow!("P-256 x coordinate not 32 bytes"))?;
+    let y_arr: [u8; 32] = y_bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| anyhow!("P-256 y coordinate not 32 bytes"))?;
+    let encoded_point = EncodedPoint::from_affine_coordinates(&x_arr.into(), &y_arr.into(), false);
+    VerifyingKey::from_encoded_point(&encoded_point)
+        .map_err(|e| anyhow!("invalid P-256 public key: {}", e))
 }
 
-fn print_outcome(label: &str, o: &Outcome) {
-    match o {
-        Outcome::NotFound => println!("{} revocation check: PASS (not in revocation artifact)", label),
-        Outcome::Revoked { date } => println!(
-            "{} revocation check: FAIL (revoked at {}, before/at signing time)",
-            label,
-            date.format(&Rfc3339).unwrap_or_default()
-        ),
-        Outcome::RevokedAfterSig { date } => println!(
-            "{} revocation check: PASS (revoked at {}, after signing time — signature was made while the cert was still valid)",
-            label,
-            date.format(&Rfc3339).unwrap_or_default()
-        ),
-    }
+fn iso(ts: i64) -> String {
+    OffsetDateTime::from_unix_timestamp(ts)
+        .ok()
+        .and_then(|dt| dt.format(&Rfc3339).ok())
+        .unwrap_or_else(|| ts.to_string())
+}
+
+fn iso_dt(dt: &OffsetDateTime) -> String {
+    dt.format(&Rfc3339).unwrap_or_default()
 }
 
 fn parse_pem_chain(buf: &[u8]) -> Result<Vec<Vec<u8>>> {

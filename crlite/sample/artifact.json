@@ -1,225 +1,299 @@
 {
-  "version": 1,
-  "trust_list_version": "C2PA-2026-05",
-  "generated_at": "2026-05-13T15:15:54.683438803Z",
-  "next_update": "2026-05-20T15:15:54.683438803Z",
-  "partial": true,
+  "covered_issuers": [
+    {
+      "issuer_ski": "0249afa559292af4b5d991e06a8caca2c856ed7a",
+      "last_crl_update": "2026-05-15T01:46:51Z",
+      "scope": "anchors",
+      "status": "ok"
+    },
+    {
+      "issuer_ski": "2efaefad8f26eff028cc84f76311b86f1ac35b08",
+      "last_crl_update": "2026-06-12T18:04:38Z",
+      "scope": "anchors",
+      "status": "stale"
+    },
+    {
+      "issuer_ski": "46b21c77e17b15f0a539a170ded1c42eea6db2de",
+      "last_crl_update": "2026-04-07T00:00:00Z",
+      "scope": "anchors",
+      "status": "ok"
+    },
+    {
+      "issuer_ski": "56eb27389a3e48d67280859b7ac307515a04f3e5",
+      "last_crl_update": "2025-08-27T00:00:00Z",
+      "scope": "anchors",
+      "status": "ok"
+    },
+    {
+      "issuer_ski": "6593b4a024f586a8564b8b4c3e188d7709f8eae1",
+      "last_crl_update": "2026-05-17T19:53:34Z",
+      "scope": "anchors",
+      "status": "ok"
+    },
+    {
+      "issuer_ski": "ad5a277f6381a1405bfbe7a9bc53b43045548efb",
+      "last_crl_update": "2025-10-01T13:47:28Z",
+      "scope": "anchors",
+      "status": "ok"
+    },
+    {
+      "issuer_ski": "ae6c05a39313e2a2e7e2d71cd6c7f07fc86753a0",
+      "last_crl_update": "2026-04-07T00:00:00Z",
+      "scope": "anchors",
+      "status": "ok"
+    },
+    {
+      "issuer_ski": "dd040907a2f57a7d5253129295ee3880250da659",
+      "last_crl_update": "2025-11-13T16:44:57Z",
+      "scope": "anchors",
+      "status": "ok"
+    },
+    {
+      "issuer_ski": "ecd7e382d2715d644cdf2e673fe7ba98ae1c0f4f",
+      "last_crl_update": "2026-06-10T21:37:33Z",
+      "scope": "anchors",
+      "status": "ok"
+    },
+    {
+      "issuer_ski": "f41811ae0982894efc9bb433f6f4dfbd024e9436",
+      "last_crl_update": "2025-08-27T00:00:00Z",
+      "scope": "anchors",
+      "status": "ok"
+    },
+    {
+      "issuer_ski": "56eb27389a3e48d67280859b7ac307515a04f3e5",
+      "last_crl_update": "2025-08-27T00:00:00Z",
+      "scope": "tsa",
+      "status": "ok"
+    },
+    {
+      "issuer_ski": "f41811ae0982894efc9bb433f6f4dfbd024e9436",
+      "last_crl_update": "2025-08-27T00:00:00Z",
+      "scope": "tsa",
+      "status": "ok"
+    }
+  ],
   "entries": [
     {
-      "scope": "anchors",
       "issuer_ski": "46b21c77e17b15f0a539a170ded1c42eea6db2de",
-      "serial": "778e9a5f8df8cbe6b40704ccab67cf51",
-      "revocation_date": "2020-07-08T16:00:00Z"
+      "revocation_date": "2020-07-08T16:00:00Z",
+      "scope": "anchors",
+      "serial": "778e9a5f8df8cbe6b40704ccab67cf51"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "46b21c77e17b15f0a539a170ded1c42eea6db2de",
-      "serial": "784aa9242552120b86cc7f5f66e87a77",
-      "revocation_date": "2024-03-20T00:00:00Z"
+      "revocation_date": "2024-03-20T00:00:00Z",
+      "scope": "anchors",
+      "serial": "784aa9242552120b86cc7f5f66e87a77"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "ad5a277f6381a1405bfbe7a9bc53b43045548efb",
-      "serial": "4191d9d750ffbe87d1a351b518dbfcb8",
-      "revocation_date": "2023-07-06T14:36:29Z"
+      "revocation_date": "2023-07-06T14:36:29Z",
+      "scope": "anchors",
+      "serial": "4191d9d750ffbe87d1a351b518dbfcb8"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "ad5a277f6381a1405bfbe7a9bc53b43045548efb",
-      "serial": "79e55c5f948c69021c8cb5cedcb1b948",
-      "revocation_date": "2023-07-06T15:05:49Z"
+      "revocation_date": "2023-07-06T15:05:49Z",
+      "scope": "anchors",
+      "serial": "79e55c5f948c69021c8cb5cedcb1b948"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "ae6c05a39313e2a2e7e2d71cd6c7f07fc86753a0",
-      "serial": "01e9d8a49b72b28deb938e7caa",
-      "revocation_date": "2020-07-28T00:00:00Z"
+      "revocation_date": "2020-07-28T00:00:00Z",
+      "scope": "anchors",
+      "serial": "01e9d8a49b72b28deb938e7caa"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "ae6c05a39313e2a2e7e2d71cd6c7f07fc86753a0",
-      "serial": "11d71c3b040319cab90775a3cb5989cd8cd5",
-      "revocation_date": "2020-08-19T00:00:00Z"
+      "revocation_date": "2020-08-19T00:00:00Z",
+      "scope": "anchors",
+      "serial": "11d71c3b040319cab90775a3cb5989cd8cd5"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "ae6c05a39313e2a2e7e2d71cd6c7f07fc86753a0",
-      "serial": "468e757b50e99e36c7dcb29d8216",
-      "revocation_date": "2018-04-18T00:00:00Z"
+      "revocation_date": "2018-04-18T00:00:00Z",
+      "scope": "anchors",
+      "serial": "468e757b50e99e36c7dcb29d8216"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "ae6c05a39313e2a2e7e2d71cd6c7f07fc86753a0",
-      "serial": "48a402ddb5defd50accfc0fcf13f",
-      "revocation_date": "2020-07-08T16:00:00Z"
+      "revocation_date": "2020-07-08T16:00:00Z",
+      "scope": "anchors",
+      "serial": "48a402ddb5defd50accfc0fcf13f"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "ae6c05a39313e2a2e7e2d71cd6c7f07fc86753a0",
-      "serial": "751e3ee8f0eed3fb49bc1d2dfaad938f",
-      "revocation_date": "2020-07-08T16:00:00Z"
+      "revocation_date": "2020-07-08T16:00:00Z",
+      "scope": "anchors",
+      "serial": "751e3ee8f0eed3fb49bc1d2dfaad938f"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "ae6c05a39313e2a2e7e2d71cd6c7f07fc86753a0",
-      "serial": "79b9fe92cb8cb6b98ce748bb108e7d26",
-      "revocation_date": "2022-04-06T00:00:00Z"
+      "revocation_date": "2022-04-06T00:00:00Z",
+      "scope": "anchors",
+      "serial": "79b9fe92cb8cb6b98ce748bb108e7d26"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "ae6c05a39313e2a2e7e2d71cd6c7f07fc86753a0",
-      "serial": "79b9fe93cf7282aa5e5c569d8e2ac8e1",
-      "revocation_date": "2022-04-06T00:00:00Z"
+      "revocation_date": "2022-04-06T00:00:00Z",
+      "scope": "anchors",
+      "serial": "79b9fe93cf7282aa5e5c569d8e2ac8e1"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "ae6c05a39313e2a2e7e2d71cd6c7f07fc86753a0",
-      "serial": "79b9fe9729d2035fdb91f317cf5f7b21",
-      "revocation_date": "2022-04-06T00:00:00Z"
+      "revocation_date": "2022-04-06T00:00:00Z",
+      "scope": "anchors",
+      "serial": "79b9fe9729d2035fdb91f317cf5f7b21"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "dd040907a2f57a7d5253129295ee3880250da659",
-      "serial": "05c2a54d715cf661",
-      "revocation_date": "2019-04-05T17:01:59Z"
+      "revocation_date": "2019-04-05T17:01:59Z",
+      "scope": "anchors",
+      "serial": "05c2a54d715cf661"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "dd040907a2f57a7d5253129295ee3880250da659",
-      "serial": "08d3bb1c1d6c8c418c4c263837c1a17e",
-      "revocation_date": "2023-03-28T17:01:48Z"
+      "revocation_date": "2023-03-28T17:01:48Z",
+      "scope": "anchors",
+      "serial": "08d3bb1c1d6c8c418c4c263837c1a17e"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "dd040907a2f57a7d5253129295ee3880250da659",
-      "serial": "09e6f7e5dc8a10be",
-      "revocation_date": "2022-12-13T16:19:55Z"
+      "revocation_date": "2022-12-13T16:19:55Z",
+      "scope": "anchors",
+      "serial": "09e6f7e5dc8a10be"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "dd040907a2f57a7d5253129295ee3880250da659",
-      "serial": "0af338327c1d48ba41753ebeb9ea6029",
-      "revocation_date": "2023-06-15T15:53:20Z"
+      "revocation_date": "2023-06-15T15:53:20Z",
+      "scope": "anchors",
+      "serial": "0af338327c1d48ba41753ebeb9ea6029"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "dd040907a2f57a7d5253129295ee3880250da659",
-      "serial": "1308111fb693e61a3c77719edaa9cb80",
-      "revocation_date": "2022-12-13T16:19:57Z"
+      "revocation_date": "2022-12-13T16:19:57Z",
+      "scope": "anchors",
+      "serial": "1308111fb693e61a3c77719edaa9cb80"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "dd040907a2f57a7d5253129295ee3880250da659",
-      "serial": "196a0e18a1ebe03e11d1ebbf5b155d5c",
-      "revocation_date": "2022-12-13T16:20:05Z"
+      "revocation_date": "2022-12-13T16:20:05Z",
+      "scope": "anchors",
+      "serial": "196a0e18a1ebe03e11d1ebbf5b155d5c"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "dd040907a2f57a7d5253129295ee3880250da659",
-      "serial": "28c932b2a07946dd",
-      "revocation_date": "2019-04-05T17:01:53Z"
+      "revocation_date": "2019-04-05T17:01:53Z",
+      "scope": "anchors",
+      "serial": "28c932b2a07946dd"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "dd040907a2f57a7d5253129295ee3880250da659",
-      "serial": "29e282780199da757a1b37e073467b35",
-      "revocation_date": "2022-12-13T16:20:12Z"
+      "revocation_date": "2022-12-13T16:20:12Z",
+      "scope": "anchors",
+      "serial": "29e282780199da757a1b37e073467b35"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "dd040907a2f57a7d5253129295ee3880250da659",
-      "serial": "3348510d6aa99654904848a14be65170",
-      "revocation_date": "2023-06-15T15:53:18Z"
+      "revocation_date": "2023-06-15T15:53:18Z",
+      "scope": "anchors",
+      "serial": "3348510d6aa99654904848a14be65170"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "dd040907a2f57a7d5253129295ee3880250da659",
-      "serial": "385b337cfc49620e",
-      "revocation_date": "2022-12-13T16:19:58Z"
+      "revocation_date": "2022-12-13T16:19:58Z",
+      "scope": "anchors",
+      "serial": "385b337cfc49620e"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "dd040907a2f57a7d5253129295ee3880250da659",
-      "serial": "39742766a5958257b9bb7c164f385426",
-      "revocation_date": "2022-12-13T16:20:04Z"
+      "revocation_date": "2022-12-13T16:20:04Z",
+      "scope": "anchors",
+      "serial": "39742766a5958257b9bb7c164f385426"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "dd040907a2f57a7d5253129295ee3880250da659",
-      "serial": "3adf2110d945a5c4",
-      "revocation_date": "2022-12-13T16:20:00Z"
+      "revocation_date": "2022-12-13T16:20:00Z",
+      "scope": "anchors",
+      "serial": "3adf2110d945a5c4"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "dd040907a2f57a7d5253129295ee3880250da659",
-      "serial": "440efe52e2e9deb4ec7541fb979ee10c",
-      "revocation_date": "2023-03-28T17:01:49Z"
+      "revocation_date": "2023-03-28T17:01:49Z",
+      "scope": "anchors",
+      "serial": "440efe52e2e9deb4ec7541fb979ee10c"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "dd040907a2f57a7d5253129295ee3880250da659",
-      "serial": "4b85129b9ddc6c85",
-      "revocation_date": "2019-04-05T17:01:42Z"
+      "revocation_date": "2019-04-05T17:01:42Z",
+      "scope": "anchors",
+      "serial": "4b85129b9ddc6c85"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "dd040907a2f57a7d5253129295ee3880250da659",
-      "serial": "4e33a3df038c94bd5611a51814f68ce9",
-      "revocation_date": "2023-06-15T15:53:15Z"
+      "revocation_date": "2023-06-15T15:53:15Z",
+      "scope": "anchors",
+      "serial": "4e33a3df038c94bd5611a51814f68ce9"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "dd040907a2f57a7d5253129295ee3880250da659",
-      "serial": "4eb6ad64ea15ba233c32b0d491670063",
-      "revocation_date": "2023-06-15T15:53:21Z"
+      "revocation_date": "2023-06-15T15:53:21Z",
+      "scope": "anchors",
+      "serial": "4eb6ad64ea15ba233c32b0d491670063"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "dd040907a2f57a7d5253129295ee3880250da659",
-      "serial": "50758bb068c7ca6bf84cc950abc26539",
-      "revocation_date": "2023-06-15T15:53:17Z"
+      "revocation_date": "2023-06-15T15:53:17Z",
+      "scope": "anchors",
+      "serial": "50758bb068c7ca6bf84cc950abc26539"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "dd040907a2f57a7d5253129295ee3880250da659",
-      "serial": "5af6736540f1fc69f81d81e96565769b",
-      "revocation_date": "2022-12-13T16:20:10Z"
+      "revocation_date": "2022-12-13T16:20:10Z",
+      "scope": "anchors",
+      "serial": "5af6736540f1fc69f81d81e96565769b"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "dd040907a2f57a7d5253129295ee3880250da659",
-      "serial": "605b97fc49161b854cd2ee916f57496d",
-      "revocation_date": "2022-12-13T16:20:06Z"
+      "revocation_date": "2022-12-13T16:20:06Z",
+      "scope": "anchors",
+      "serial": "605b97fc49161b854cd2ee916f57496d"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "dd040907a2f57a7d5253129295ee3880250da659",
-      "serial": "608242d4602294e9",
-      "revocation_date": "2022-12-13T16:19:56Z"
+      "revocation_date": "2022-12-13T16:19:56Z",
+      "scope": "anchors",
+      "serial": "608242d4602294e9"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "dd040907a2f57a7d5253129295ee3880250da659",
-      "serial": "663e22b3f73ccb78dc74369353ab24c3",
-      "revocation_date": "2023-06-15T15:53:16Z"
+      "revocation_date": "2023-06-15T15:53:16Z",
+      "scope": "anchors",
+      "serial": "663e22b3f73ccb78dc74369353ab24c3"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "dd040907a2f57a7d5253129295ee3880250da659",
-      "serial": "672d382ae057b40fd7cf42a7d8aa9416",
-      "revocation_date": "2022-12-13T16:20:01Z"
+      "revocation_date": "2022-12-13T16:20:01Z",
+      "scope": "anchors",
+      "serial": "672d382ae057b40fd7cf42a7d8aa9416"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "dd040907a2f57a7d5253129295ee3880250da659",
-      "serial": "7429313102872ad0af05262066a5295b",
-      "revocation_date": "2023-03-28T17:01:50Z"
+      "revocation_date": "2023-03-28T17:01:50Z",
+      "scope": "anchors",
+      "serial": "7429313102872ad0af05262066a5295b"
     },
     {
-      "scope": "anchors",
       "issuer_ski": "dd040907a2f57a7d5253129295ee3880250da659",
-      "serial": "7d050820aeba12822e8bf38f1803fe77",
-      "revocation_date": "2023-03-28T17:01:46Z"
+      "revocation_date": "2023-03-28T17:01:46Z",
+      "scope": "anchors",
+      "serial": "7d050820aeba12822e8bf38f1803fe77"
     }
-  ]
+  ],
+  "generated_at": "2026-06-12T18:04:38Z",
+  "next_update": "2026-06-19T18:04:38Z",
+  "partial": true,
+  "trust_list_id": "C2PA-sample",
+  "version": 1
 }

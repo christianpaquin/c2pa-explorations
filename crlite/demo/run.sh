@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end demo for the CRLite-for-C2PA proof of concept.
+# End-to-end demo for the Aggregated Revocation Artifact (ARA) proof of concept.
 #
 # Drives the full pipeline:
 #   1. Build the aggregator and validator.
@@ -17,8 +17,8 @@ ASSET="${C2PA_ASSET:-/home/cpaquin/dev/c2pa/c2pa-rs/sdk/tests/fixtures/CA.jpg}"
 OUT="$(mktemp -d)"
 trap 'rm -rf "$OUT"' EXIT
 
-AGG="$REPO_ROOT/aggregator/target/release/crlite-aggregator"
-VAL="$REPO_ROOT/validator/target/release/crlite-validator"
+AGG="$REPO_ROOT/aggregator/target/release/ara-aggregator"
+VAL="$REPO_ROOT/validator/target/release/ara-validator"
 
 hdr() { printf '\n\033[1;36m=== %s ===\033[0m\n' "$*"; }
 
@@ -32,12 +32,12 @@ hdr "Step 1: aggregate from the live C2PA trust lists (clean)"
   --anchors https://contentcredentials.org/trust/anchors.pem \
   --tsa     https://raw.githubusercontent.com/c2pa-org/conformance-public/refs/heads/main/trust-list/C2PA-TSA-TRUST-LIST.pem \
   --out     "$OUT/clean" \
-  --trust-list-version "C2PA-demo-clean" 2>&1 | tail -3
+  --trust-list-id "C2PA-demo-clean" 2>&1 | tail -3
 echo
 
-hdr "Step 2: validate $ASSET against the CLEAN artifact (expect both PASS)"
+hdr "Step 2: validate $ASSET against the CLEAN artifact (expect both PASS — issuers not covered, --uncovered-policy=warn)"
 set +e
-"$VAL" --artifact "$OUT/clean/artifact.jws" --pubkey "$OUT/clean/publisher.jwk" "$ASSET"
+"$VAL" --artifact "$OUT/clean/artifact.cose" --pubkey "$OUT/clean/publisher.jwk" "$ASSET"
 clean_exit=$?
 set -e
 printf '\nClean exit: %d\n' "$clean_exit"
@@ -48,12 +48,12 @@ hdr "Step 3: re-aggregate with synthetic injected revocations for that asset's c
   --tsa     https://raw.githubusercontent.com/c2pa-org/conformance-public/refs/heads/main/trust-list/C2PA-TSA-TRUST-LIST.pem \
   --inject-entries "$REPO_ROOT/sample/inject-demo.json" \
   --out     "$OUT/injected" \
-  --trust-list-version "C2PA-demo-injected" 2>&1 | tail -8
+  --trust-list-id "C2PA-demo-injected" 2>&1 | tail -8
 echo
 
-hdr "Step 4: validate $ASSET against the INJECTED artifact (expect claim FAIL, TSA PASS)"
+hdr "Step 4: validate $ASSET against the INJECTED artifact (expect claim FAIL, TSA PASS — injected issuers are now covered)"
 set +e
-"$VAL" --artifact "$OUT/injected/artifact.jws" --pubkey "$OUT/injected/publisher.jwk" "$ASSET"
+"$VAL" --artifact "$OUT/injected/artifact.cose" --pubkey "$OUT/injected/publisher.jwk" "$ASSET"
 injected_exit=$?
 set -e
 printf '\nInjected exit: %d\n' "$injected_exit"

@@ -205,11 +205,11 @@ These are not part of this proof of concept; they are noted here only to indicat
 
 ## Proof of concept
 
-Implemented in this subdirectory (v0.2 note: the PoC currently emits the **signed-JSON** form below; migrating it to the normative CBOR/COSE_Sign1 form and adding the coverage set are tracked in [Future work](#future-work-and-known-gaps)):
+Implemented in this subdirectory. As of v0.2 the PoC emits the normative **CBOR + COSE_Sign1** artifact and populates the **coverage set**; a JSON debug projection (Appendix A) is written alongside for inspection.
 
-1. **`aggregator/`** — a small Rust binary that takes one or more anchor PEM files as input, parses each cert (using `x509-parser`), follows each CDP, downloads and parses the CRL, deduplicates entries, and emits a signed artifact.
+1. **`aggregator/`** — a small Rust binary that takes one or more anchor PEM files as input, parses each cert (using `x509-parser`), follows each CDP, downloads and parses the CRL, deduplicates entries, records the coverage set, and emits a CBOR artifact signed as COSE_Sign1.
 2. **`sample/`** — an example output artifact built from the current [official C2PA anchors trust list](https://raw.githubusercontent.com/c2pa-org/conformance-public/refs/heads/main/trust-list/C2PA-TRUST-LIST.pem) augmented (for prototyping density only) with the [interim anchors list](https://contentcredentials.org/trust/anchors.pem). The [interim end-entity list](https://verify.contentauthenticity.org/trust/allowed.pem) is deliberately not used: it enumerates leaf certs rather than CAs, and revocation there is already handled by removal from the allowlist.
-3. **`validator/`** — a small wrapper around [`c2pa-rs`](https://github.com/contentauth/c2pa-rs) that performs normal C2PA validation, extracts the claim-signing certificate and `sigTst2` time, then post-processes the revocation check against the local artifact.
+3. **`validator/`** — a small wrapper around [`c2pa-rs`](https://github.com/contentauth/c2pa-rs) that performs normal C2PA validation, extracts the claim-signing certificate and `sigTst2` time, then post-processes the revocation check against the local artifact, applying the coverage-set decision logic (with an `--uncovered-policy` fallback).
 4. **`demo/`** — sign a sample asset with `c2patool` and run the wrapper validator both on the unmodified asset and on a synthetic scenario with a revoked cert, demonstrating both pass and fail paths.
 
 The PoC is intentionally scoped to the flat-list artifact form. The Clubcard / cascading-filter variant from upstream CRLite is left as future work; it is only interesting once the universe of C2PA certs is large enough for raw-list size to matter.
@@ -218,9 +218,13 @@ The PoC is intentionally scoped to the flat-list artifact form. The Clubcard / c
 
 This is the canonical list. The `aggregator/` and `validator/` READMEs link here rather than maintaining their own lists.
 
+### Implemented in v0.2
+
+* **CBOR / COSE_Sign1 artifact and coverage set.** The aggregator now emits the normative CBOR artifact signed as COSE_Sign1 and populates `covered-issuers`; the validator verifies the COSE_Sign1, CBOR-decodes the payload, and applies the coverage-set decision logic with an `--uncovered-policy` (`warn`/`refuse`) fallback for not-covered issuers. The `--uncovered-policy` default (`warn`) is provisional and worth revisiting.
+
 ### PoC gaps (would be addressed before this is more than a demo)
 
-* **CBOR / COSE_Sign1 artifact and coverage set.** The doc (v0.2) specifies CBOR + COSE_Sign1 and a coverage set, but the PoC code still emits signed JSON (ES256 JWS) with no coverage set. Migrating the aggregator (emit COSE_Sign1/CBOR, populate `covered-issuers`) and the validator (read it, apply coverage-set logic) is the next code step.
+* **OCSP staple consultation.** For a not-covered issuer the validator only *detects* a stapled OCSP response (`rVals`); it does not parse or verify it. A real deployment would consult the staple on the legacy path.
 * **Intermediate cert coverage in the aggregator.** Most certs in the C2PA anchors trust lists are self-signed roots that carry no CDP — the smoke-test run found only ~7 of 47 anchors had a fetchable CRL URL. Meaningful revocation data lives on *intermediate* certs (whose CDPs point to CRLs the root publishes about them) and on *end-entity* certs (whose CDPs point to CRLs the intermediate publishes). Where to source intermediates is the open question, see [Sourcing intermediate certs](#sourcing-intermediate-certs) below.
 * **Test certificate minting.** The aggregator now has an `--inject-entries` flag that takes a JSON list of synthetic entries and merges them into the artifact (see `sample/inject-demo.json` and `demo/run.sh`). What's still outstanding is a dedicated test-cert minter — a small helper that produces a fresh test CA + EE cert + matching CRL so the demo doesn't have to pin its synthetic entries to existing fixture certs. Useful once we want regression tests independent of `c2pa-rs` fixtures.
 * **TSA cert resolution refinement.** The validator now extracts the TSA cert from the COSE_Sign1's `sigTst`/`sigTst2` header (CMS SignedData inside the TimeStampToken). It currently uses a "first cert in `SignedData.certificates`" heuristic; production should resolve via `SignerInfo.sid` (issuer+serial or SKI) to handle multi-cert chains correctly.
