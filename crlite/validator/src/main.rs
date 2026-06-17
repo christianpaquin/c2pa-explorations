@@ -38,7 +38,10 @@ enum UncoveredPolicy {
 }
 
 #[derive(Parser, Debug)]
-#[command(version, about = "Verify a C2PA asset's certs against an Aggregated Revocation Artifact (ARA)")]
+#[command(
+    version,
+    about = "Verify a C2PA asset's certs against an Aggregated Revocation Artifact (ARA)"
+)]
 struct Args {
     /// Signed revocation artifact (COSE_Sign1, CBOR).
     #[arg(long)]
@@ -47,6 +50,10 @@ struct Args {
     /// Publisher's public key (P-256 EC JWK).
     #[arg(long)]
     pubkey: PathBuf,
+
+    /// Expected trust-list identifier bound into the artifact.
+    #[arg(long)]
+    trust_list_id: String,
 
     /// Days past `next_update` to still accept the artifact.
     #[arg(long, default_value_t = 30i64)]
@@ -126,6 +133,7 @@ enum Outcome {
     Revoked { date: OffsetDateTime },
     RevokedAfterSig { date: OffsetDateTime },
     CoverageStale,
+    TsaUnavailable { reason: String },
     NotCoveredStaple,
     NotCoveredWarn,
     NotCoveredRefuse,
@@ -136,7 +144,10 @@ impl Outcome {
     fn is_failure(&self) -> bool {
         matches!(
             self,
-            Outcome::Revoked { .. } | Outcome::CoverageStale | Outcome::NotCoveredRefuse
+            Outcome::Revoked { .. }
+                | Outcome::CoverageStale
+                | Outcome::TsaUnavailable { .. }
+                | Outcome::NotCoveredRefuse
         )
     }
 }
@@ -144,7 +155,12 @@ impl Outcome {
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    let artifact = load_and_verify_artifact(&args.artifact, &args.pubkey, args.grace_days)?;
+    let artifact = load_and_verify_artifact(
+        &args.artifact,
+        &args.pubkey,
+        args.grace_days,
+        &args.trust_list_id,
+    )?;
     println!("Artifact:");
     println!("  trust_list_id:   {}", artifact.trust_list_id);
     println!("  generated_at:    {}", iso(artifact.generated_at));
@@ -189,7 +205,10 @@ fn main() -> Result<()> {
         }
     };
 
-    let cose_sign1_bytes = load_cose_sign1_bytes(&args.asset).ok().flatten();
+    let (cose_sign1_bytes, cose_load_error) = match load_cose_sign1_bytes(&args.asset) {
+        Ok(bytes) => (bytes, None),
+        Err(e) => (None, Some(format!("{:#}", e))),
+    };
     let staple_present = cose_sign1_bytes
         .as_deref()
         .map(has_ocsp_staple)
@@ -245,14 +264,13 @@ fn main() -> Result<()> {
                 args.uncovered_policy,
             ))
         }
-        Ok(None) => {
-            println!("TSA cert revocation check: skipped (no sigTst2 in COSE signature)");
-            None
-        }
-        Err(e) => {
-            println!("TSA cert revocation check: skipped (extract failed: {:#})", e);
-            None
-        }
+        Ok(None) => Some(Outcome::TsaUnavailable {
+            reason: cose_load_error
+                .unwrap_or_else(|| "no sigTst/sigTst2 in COSE signature".to_string()),
+        }),
+        Err(e) => Some(Outcome::TsaUnavailable {
+            reason: format!("extract failed: {:#}", e),
+        }),
     };
     if let Some(o) = &tsa_outcome {
         print_outcome("TSA cert", o);
@@ -337,6 +355,10 @@ fn print_outcome(label: &str, o: &Outcome) {
             "{} revocation check: FAIL (issuer covered but its CRL data is stale — cannot assert non-revocation)",
             label
         ),
+        Outcome::TsaUnavailable { reason } => println!(
+            "{} revocation check: FAIL (TSA certificate unavailable: {})",
+            label, reason
+        ),
         Outcome::NotCoveredStaple => println!(
             "{} revocation check: PASS (issuer not covered; an OCSP staple is present — legacy path; staple consultation is out of scope for this PoC)",
             label
@@ -404,8 +426,8 @@ fn has_ocsp_staple(cose_bytes: &[u8]) -> bool {
 ///
 /// Layout: sigTst2 value is CBOR `{ "tstTokens": [ { "val": <DER bytes> } ] }`. The
 /// DER bytes are an RFC 3161 TimeStampToken — a CMS ContentInfo wrapping SignedData.
-/// We extract the first certificate carried in SignedData.certificates as the TSA cert
-/// (heuristic; production would resolve via SignerInfo.sid).
+/// Resolve the timestamp signer through SignerInfo.sid and return the matching
+/// certificate carried in SignedData.certificates.
 fn extract_tsa_cert_der(cose_sig: Option<&[u8]>) -> Result<Option<Vec<u8>>> {
     use cms::cert::CertificateChoices;
     use cms::content_info::ContentInfo;
@@ -461,26 +483,61 @@ fn extract_tsa_cert_der(cose_sig: Option<&[u8]>) -> Result<Option<Vec<u8>>> {
     let ci = ContentInfo::from_der(&ci_der).context("parsing TimeStampToken ContentInfo")?;
     let sd_der = ci.content.to_der().context("re-encoding SignedData")?;
     let sd = SignedData::from_der(&sd_der).context("decoding SignedData")?;
-    let certs = sd
-        .certificates
-        .ok_or_else(|| anyhow!("SignedData has no certificates"))?;
-    let cert_choice = certs
+    let signer = sd
+        .signer_infos
         .0
         .iter()
         .next()
-        .ok_or_else(|| anyhow!("SignedData.certificates is empty"))?;
-    let cert = match cert_choice {
-        CertificateChoices::Certificate(c) => c,
-        other => bail!("unsupported CertificateChoices variant: {:?}", other),
-    };
+        .ok_or_else(|| anyhow!("SignedData.signer_infos is empty"))?;
+    let certs = sd
+        .certificates
+        .as_ref()
+        .ok_or_else(|| anyhow!("SignedData has no certificates"))?;
+    let mut matching_cert = None;
+    for choice in certs.0.iter() {
+        let CertificateChoices::Certificate(cert) = choice else {
+            continue;
+        };
+        if signer_id_matches_cert(&signer.sid, cert)? {
+            matching_cert = Some(cert);
+            break;
+        }
+    }
+    let cert =
+        matching_cert.ok_or_else(|| anyhow!("no SignedData certificate matched SignerInfo.sid"))?;
     let cert_der = cert.to_der().context("re-encoding TSA cert to DER")?;
     Ok(Some(cert_der))
+}
+
+fn signer_id_matches_cert(
+    sid: &cms::signed_data::SignerIdentifier,
+    cert: &x509_cert::certificate::Certificate,
+) -> Result<bool> {
+    use cms::signed_data::SignerIdentifier;
+    use x509_cert::ext::pkix::SubjectKeyIdentifier;
+
+    match sid {
+        SignerIdentifier::IssuerAndSerialNumber(iasn) => Ok(cert.tbs_certificate.issuer
+            == iasn.issuer
+            && cert.tbs_certificate.serial_number == iasn.serial_number),
+        SignerIdentifier::SubjectKeyIdentifier(sid_ski) => {
+            let Some((_, cert_ski)) = cert
+                .tbs_certificate
+                .get::<SubjectKeyIdentifier>()
+                .context("decoding certificate SKI")?
+            else {
+                return Ok(false);
+            };
+            Ok(cert_ski.0.as_bytes() == sid_ski.0.as_bytes())
+        }
+    }
 }
 
 fn load_and_verify_artifact(
     artifact_path: &PathBuf,
     pubkey_path: &PathBuf,
     grace_days: i64,
+    expected_trust_list_id: &str,
 ) -> Result<Artifact> {
     let cose_bytes = fs::read(artifact_path)
         .with_context(|| format!("reading artifact {}", artifact_path.display()))?;
@@ -490,7 +547,11 @@ fn load_and_verify_artifact(
         .map_err(|e| anyhow!("parsing artifact COSE_Sign1: {:?}", e))?;
 
     let alg = sign1.protected.header.alg.clone();
-    if alg != Some(coset::RegisteredLabelWithPrivate::Assigned(coset::iana::Algorithm::ES256)) {
+    if alg
+        != Some(coset::RegisteredLabelWithPrivate::Assigned(
+            coset::iana::Algorithm::ES256,
+        ))
+    {
         bail!("unsupported COSE alg: {:?} (expected ES256)", alg);
     }
 
@@ -514,6 +575,13 @@ fn load_and_verify_artifact(
     if artifact.version != 1 {
         bail!("unsupported artifact version: {}", artifact.version);
     }
+    if artifact.trust_list_id != expected_trust_list_id {
+        bail!(
+            "artifact trust_list_id mismatch: got '{}', expected '{}'",
+            artifact.trust_list_id,
+            expected_trust_list_id
+        );
+    }
 
     let now = OffsetDateTime::now_utc();
     let next_update = OffsetDateTime::from_unix_timestamp(artifact.next_update)
@@ -536,7 +604,11 @@ fn load_pubkey(pubkey_path: &PathBuf) -> Result<VerifyingKey> {
         .with_context(|| format!("reading pubkey {}", pubkey_path.display()))?;
     let pubjwk: PublicJwk = serde_json::from_str(&pubkey_json)?;
     if pubjwk.kty != "EC" || pubjwk.crv != "P-256" {
-        bail!("unsupported public key: kty={}, crv={}", pubjwk.kty, pubjwk.crv);
+        bail!(
+            "unsupported public key: kty={}, crv={}",
+            pubjwk.kty,
+            pubjwk.crv
+        );
     }
     let x_bytes = B64URL.decode(&pubjwk.x)?;
     let y_bytes = B64URL.decode(&pubjwk.y)?;

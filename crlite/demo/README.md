@@ -3,7 +3,7 @@
 A single shell script that drives the full proof of concept:
 
 1. Builds `aggregator` and `validator` in release mode.
-2. Aggregates revocation data from the live C2PA Trust Lists into a signed JSON artifact.
+2. Aggregates revocation data from the live C2PA Trust Lists into a signed COSE artifact plus a JSON debug projection.
 3. Validates `c2pa-rs`'s `CA.jpg` test fixture against the clean artifact → both the claim-signing cert and the TSA cert pass.
 4. Re-aggregates with synthetic injected entries (`../sample/inject-demo.json`) targeting that asset's exact `(issuer SKI, serial)` pairs, with carefully chosen revocation dates that exercise both temporal cases.
 5. Validates again — the claim-signing cert fails (revoked before signing time) while the TSA cert passes (revoked *after* signing time, the design doc's whole point).

@@ -37,7 +37,11 @@ echo
 
 hdr "Step 2: validate $ASSET against the CLEAN artifact (expect both PASS — issuers not covered, --uncovered-policy=warn)"
 set +e
-"$VAL" --artifact "$OUT/clean/artifact.cose" --pubkey "$OUT/clean/publisher.jwk" "$ASSET"
+"$VAL" \
+  --artifact "$OUT/clean/artifact.cose" \
+  --pubkey "$OUT/clean/publisher.jwk" \
+  --trust-list-id "C2PA-demo-clean" \
+  "$ASSET"
 clean_exit=$?
 set -e
 printf '\nClean exit: %d\n' "$clean_exit"
@@ -53,7 +57,11 @@ echo
 
 hdr "Step 4: validate $ASSET against the INJECTED artifact (expect claim FAIL, TSA PASS — injected issuers are now covered)"
 set +e
-"$VAL" --artifact "$OUT/injected/artifact.cose" --pubkey "$OUT/injected/publisher.jwk" "$ASSET"
+"$VAL" \
+  --artifact "$OUT/injected/artifact.cose" \
+  --pubkey "$OUT/injected/publisher.jwk" \
+  --trust-list-id "C2PA-demo-injected" \
+  "$ASSET"
 injected_exit=$?
 set -e
 printf '\nInjected exit: %d\n' "$injected_exit"

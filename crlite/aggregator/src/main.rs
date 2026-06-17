@@ -19,7 +19,10 @@ use x509_parser::revocation_list::CertificateRevocationList;
 use x509_parser::{parse_x509_certificate, parse_x509_crl};
 
 #[derive(Parser, Debug)]
-#[command(version, about = "Aggregated Revocation Artifact (ARA) aggregator for C2PA")]
+#[command(
+    version,
+    about = "Aggregated Revocation Artifact (ARA) aggregator for C2PA"
+)]
 struct Args {
     /// Anchor PEM bundle (file path or http(s) URL). May be repeated.
     #[arg(long = "anchors", required = true)]
@@ -88,7 +91,9 @@ struct Entry {
     reason: Option<u8>,
 }
 
-#[derive(Serialize_repr, Deserialize_repr, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
+#[derive(
+    Serialize_repr, Deserialize_repr, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug,
+)]
 #[repr(u8)]
 enum Scope {
     Anchors = 0,
@@ -169,7 +174,7 @@ fn main() -> Result<()> {
         for der in ders {
             let (_, cert) = parse_x509_certificate(der).context("parse cert")?;
             let subject_str = cert.subject().to_string();
-            let cert_ski = extract_ski(&cert);
+            let cert_aki = extract_aki(&cert);
             let urls = extract_cdp_http_urls(&cert);
             if urls.is_empty() {
                 eprintln!("  [{:?}] no HTTP CDP: {}", scope, short_dn(&subject_str));
@@ -185,7 +190,7 @@ fn main() -> Result<()> {
                         Err(e) => {
                             eprintln!("    fetch failed: {}", e);
                             partial = true;
-                            mark_stale(&mut coverage_map, scope, cert_ski.as_ref(), now_ts);
+                            mark_stale(&mut coverage_map, scope, cert_aki.as_ref(), now_ts);
                             continue;
                         }
                     }
@@ -200,7 +205,7 @@ fn main() -> Result<()> {
                     Err(e) => {
                         eprintln!("    parse/process failed for {}: {}", url, e);
                         partial = true;
-                        mark_stale(&mut coverage_map, scope, cert_ski.as_ref(), now_ts);
+                        mark_stale(&mut coverage_map, scope, cert_aki.as_ref(), now_ts);
                     }
                 }
             }
@@ -319,7 +324,10 @@ fn main() -> Result<()> {
     let privjwk_path = args.out.join("publisher.key.jwk");
 
     fs::write(&cose_path, &cose_bytes)?;
-    fs::write(&json_path, serde_json::to_string_pretty(&debug_json(&artifact))?)?;
+    fs::write(
+        &json_path,
+        serde_json::to_string_pretty(&debug_json(&artifact))?,
+    )?;
     fs::write(
         &pubjwk_path,
         serde_json::to_string_pretty(&PublicJwk {
@@ -342,7 +350,10 @@ fn main() -> Result<()> {
 
     eprintln!();
     eprintln!("Wrote:");
-    eprintln!("  {}  (signed COSE_Sign1 — the artifact)", cose_path.display());
+    eprintln!(
+        "  {}  (signed COSE_Sign1 — the artifact)",
+        cose_path.display()
+    );
     eprintln!("  {}  (debug JSON projection)", json_path.display());
     eprintln!("  {}", pubjwk_path.display());
     eprintln!("  {} (KEEP PRIVATE)", privjwk_path.display());
@@ -351,7 +362,11 @@ fn main() -> Result<()> {
         "Artifact: {} covered issuer(s), {} entr{}, partial={}",
         artifact.covered_issuers.len(),
         artifact.entries.len(),
-        if artifact.entries.len() == 1 { "y" } else { "ies" },
+        if artifact.entries.len() == 1 {
+            "y"
+        } else {
+            "ies"
+        },
         partial
     );
 
@@ -456,6 +471,17 @@ fn extract_ski(cert: &X509Certificate) -> Option<Vec<u8>> {
     for ext in cert.extensions() {
         if let ParsedExtension::SubjectKeyIdentifier(ski) = ext.parsed_extension() {
             return Some(ski.0.to_vec());
+        }
+    }
+    None
+}
+
+fn extract_aki(cert: &X509Certificate) -> Option<Vec<u8>> {
+    for ext in cert.extensions() {
+        if let ParsedExtension::AuthorityKeyIdentifier(aki) = ext.parsed_extension() {
+            if let Some(ki) = aki.key_identifier.as_ref() {
+                return Some(ki.0.to_vec());
+            }
         }
     }
     None
