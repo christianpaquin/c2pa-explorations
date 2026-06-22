@@ -1,6 +1,6 @@
 # Aggregated Revocation Artifact (ARA) for C2PA
 
-_draft 0.2_
+_draft 0.2.1_
 
 This document proposes an **Aggregated Revocation Artifact (ARA)** — a [CRLite](https://github.com/mozilla/crlite)-inspired mechanism for proving non-revocation of C2PA signing certificates. The goal is to replace per-signature OCSP stapling with a single, periodically-refreshed, signed revocation artifact published alongside a [trust list](https://c2pa.org/conformance/) (the C2PA Trust List being the motivating case). Validators consult the local artifact at validation time and need no network call to a CA.
 
@@ -40,7 +40,9 @@ Its scale and performance, per Mozilla's [August 2025 write-up](https://hacks.mo
 * **Deployment:** shipped to **all Firefox desktop** users in **Firefox 137** (early 2025); OCSP querying was disabled in **Firefox 142** (August 2025). Mozilla has open-sourced the building blocks (`clubcard`, `clubcard-crlite`, and the CRLite backend), but to date CRLite is **essentially Firefox-only** — there is no other production deployment.
 * **Closest analog elsewhere:** Chrome's [CRLSets](https://www.chromium.org/Home/chromium-security/crlsets/) push revocation data to browsers offline as well, but they ship a **curated subset** of revocations chosen by Google rather than the comprehensive set CRLite covers — a useful contrast for C2PA's design choices below.
 
-**Why C2PA is a friendlier environment.** CRLite's filter-compression machinery exists because the WebPKI universe is enormous (millions of live certs, ~4M revocations). C2PA's certificate universe is bounded by the trust list — anchors counted in the *tens*, end-entity certs plausibly in the *low thousands* — orders of magnitude smaller. At that scale a flat, deduplicated list fits in tens of KB with no filter at all, and there is already a natural publishing authority (the conformance program governing the trust list). The interesting design problems for C2PA are therefore not compression but **temporal validity**, **backward compatibility**, and **long-term persistence**, addressed below.
+**Why C2PA is a friendlier environment.** CRLite's filter-compression machinery exists because the WebPKI universe is enormous (millions of live certs, ~4M revocations). The relevant comparison for an ARA, though, is not the *total* number of end-entity certificates but the number of *revocations* it must carry. C2PA's trust anchors are counted in the *tens*, and that bound is fixed by the trust list. The end-entity population is harder to bound and may grow large: edge-device deployments can mint a unique, short-lived certificate per signed asset, so EE certs could eventually outnumber today's WebPKI hosts.
+
+That growth does not translate into a proportionally large ARA. Per-asset certificates of this kind are short-lived and could even be single-use, and are therefore unlikely to be individually revoked; the revocations an ARA must enumerate come predominantly from the longer-lived, reused signing certificates and intermediates, a much smaller set. So while the total certificate universe could become large, the *revocation* set it produces is expected to stay modest — at that scale a flat, deduplicated list fits in tens of KB with no filter at all, and there is already a natural publishing authority (the conformance program governing the trust list). The interesting design problems for C2PA are therefore not compression but **temporal validity**, **backward compatibility**, and **long-term persistence**, addressed below. Should the revocation set ever grow enough to make size a real constraint, CRLite-style filter compression remains available as a later option.
 
 ## Description
 
@@ -278,6 +280,10 @@ For inspection and debugging only — the normative artifact is the CBOR/COSE_Si
 ```
 
 ## Change history
+
+### v0.2.1 (2026-06-22)
+
+* **Scale framing corrected.** Replaced the "low thousands" end-entity estimate in *Background on CRLite*, which understated edge-device deployments that mint a unique cert per signed asset. Clarified that an ARA carries *revocations*, not the total EE population, and that short-lived single-use certs are unlikely to be revoked — keeping the revocation set modest.
 
 ### v0.2 (2026-06-09)
 
