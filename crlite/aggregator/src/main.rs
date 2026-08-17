@@ -1,11 +1,11 @@
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
+use ciborium::tag::Required;
 use clap::Parser;
 use coset::{iana, CoseSign1Builder, HeaderBuilder, TaggedCborSerializable};
 use p256::ecdsa::{signature::Signer, Signature, SigningKey};
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::PathBuf;
@@ -24,13 +24,9 @@ use x509_parser::{parse_x509_certificate, parse_x509_crl};
     about = "Aggregated Revocation Artifact (ARA) aggregator for C2PA"
 )]
 struct Args {
-    /// Anchor PEM bundle (file path or http(s) URL). May be repeated.
-    #[arg(long = "anchors", required = true)]
-    anchors: Vec<String>,
-
-    /// TSA PEM bundle (file path or http(s) URL). May be repeated.
-    #[arg(long = "tsa")]
-    tsa: Vec<String>,
+    /// Certificate PEM bundle for this trust list (file path or http(s) URL). May be repeated.
+    #[arg(long = "certs", required = true)]
+    certs: Vec<String>,
 
     /// Output directory.
     #[arg(long, default_value = ".")]
@@ -45,22 +41,24 @@ struct Args {
     next_update_days: i64,
 
     /// Optional JSON file containing extra entries to merge into the artifact.
-    /// Each element: {scope ("anchors"|"tsa"), issuer_ski (hex), serial (hex), revocation_date (RFC 3339)}.
+    /// Each element: {issuer_ski (hex), serial_number (hex), revocation_date (RFC 3339)}.
     /// Each injected issuer is also added to the coverage set so the entry is authoritative.
     /// Useful for demonstrating revocation scenarios against synthetic or fixture certs.
     #[arg(long)]
     inject_entries: Option<PathBuf>,
 }
 
-// ---- wire structs (CBOR / COSE_Sign1 payload, kebab-case per the CDDL) -----
+// ---- wire structs (CBOR / COSE_Sign1 payload) -----------------------------
+
+type CborTime = Required<i64, 1>;
 
 #[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "camelCase")]
 struct Artifact {
     version: u32,
     trust_list_id: String,
-    generated_at: i64,
-    next_update: i64,
+    generated_at: CborTime,
+    next_update: CborTime,
     #[serde(skip_serializing_if = "Option::is_none")]
     partial: Option<bool>,
     covered_issuers: Vec<Coverage>,
@@ -68,54 +66,35 @@ struct Artifact {
 }
 
 #[derive(Serialize, Clone)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "camelCase")]
 struct Coverage {
-    scope: Scope,
+    #[serde(rename = "issuerSKI")]
     #[serde(with = "serde_bytes")]
     issuer_ski: Vec<u8>,
-    last_crl_update: i64,
+    last_update: CborTime,
     #[serde(skip_serializing_if = "Option::is_none")]
     status: Option<String>,
 }
 
 #[derive(Serialize, Clone)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "camelCase")]
 struct Entry {
-    scope: Scope,
+    #[serde(rename = "issuerSKI")]
     #[serde(with = "serde_bytes")]
     issuer_ski: Vec<u8>,
     #[serde(with = "serde_bytes")]
-    serial: Vec<u8>,
-    revocation_date: i64,
+    serial_number: Vec<u8>,
+    revocation_date: CborTime,
     #[serde(skip_serializing_if = "Option::is_none")]
     reason: Option<u8>,
-}
-
-#[derive(
-    Serialize_repr, Deserialize_repr, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug,
-)]
-#[repr(u8)]
-enum Scope {
-    Anchors = 0,
-    Tsa = 1,
-}
-
-impl Scope {
-    fn as_str(self) -> &'static str {
-        match self {
-            Scope::Anchors => "anchors",
-            Scope::Tsa => "tsa",
-        }
-    }
 }
 
 // ---- inject file (human-authored JSON: hex SKI/serial, RFC 3339 date) -------
 
 #[derive(Deserialize)]
 struct InjectEntry {
-    scope: String,
     issuer_ski: String,
-    serial: String,
+    serial_number: String,
     revocation_date: String,
 }
 
@@ -142,15 +121,9 @@ fn main() -> Result<()> {
     let args = Args::parse();
     fs::create_dir_all(&args.out)?;
 
-    let anchor_bundles = load_sources(&args.anchors)?;
-    let tsa_bundles = load_sources(&args.tsa)?;
-    let anchor_ders = collect_ders(&anchor_bundles)?;
-    let tsa_ders = collect_ders(&tsa_bundles)?;
-    eprintln!(
-        "Parsed {} anchor cert(s), {} TSA cert(s)",
-        anchor_ders.len(),
-        tsa_ders.len()
-    );
+    let bundles = load_sources(&args.certs)?;
+    let ders = collect_ders(&bundles)?;
+    eprintln!("Parsed {} cert(s)", ders.len());
 
     let client = reqwest::blocking::Client::builder()
         .user_agent("ara-aggregator/0.2 (C2PA PoC)")
@@ -158,55 +131,51 @@ fn main() -> Result<()> {
         .build()?;
 
     let mut subject_to_ski: HashMap<Vec<u8>, Vec<u8>> = HashMap::new();
-    populate_subject_index(&anchor_ders, &mut subject_to_ski)?;
-    populate_subject_index(&tsa_ders, &mut subject_to_ski)?;
+    populate_subject_index(&ders, &mut subject_to_ski)?;
 
     let now = OffsetDateTime::now_utc();
     let now_ts = now.unix_timestamp();
 
     let mut crl_cache: HashMap<String, Vec<u8>> = HashMap::new();
-    let mut entries_map: BTreeMap<(Scope, Vec<u8>, Vec<u8>), OffsetDateTime> = BTreeMap::new();
-    // coverage set, keyed by (scope, issuer SKI): records freshness + status per covered issuer
-    let mut coverage_map: BTreeMap<(Scope, Vec<u8>), (i64, Option<String>)> = BTreeMap::new();
+    let mut entries_map: BTreeMap<(Vec<u8>, Vec<u8>), OffsetDateTime> = BTreeMap::new();
+    let mut coverage_map: BTreeMap<Vec<u8>, (i64, Option<String>)> = BTreeMap::new();
     let mut partial = false;
 
-    for (scope, ders) in [(Scope::Anchors, &anchor_ders), (Scope::Tsa, &tsa_ders)] {
-        for der in ders {
-            let (_, cert) = parse_x509_certificate(der).context("parse cert")?;
-            let subject_str = cert.subject().to_string();
-            let cert_aki = extract_aki(&cert);
-            let urls = extract_cdp_http_urls(&cert);
-            if urls.is_empty() {
-                eprintln!("  [{:?}] no HTTP CDP: {}", scope, short_dn(&subject_str));
-                continue;
-            }
-            for url in urls {
-                if !crl_cache.contains_key(&url) {
-                    eprintln!("  [{:?}] fetching CRL {}", scope, url);
-                    match fetch(&client, &url) {
-                        Ok(bytes) => {
-                            crl_cache.insert(url.clone(), bytes);
-                        }
-                        Err(e) => {
-                            eprintln!("    fetch failed: {}", e);
-                            partial = true;
-                            mark_stale(&mut coverage_map, scope, cert_aki.as_ref(), now_ts);
-                            continue;
-                        }
-                    }
-                }
-                let raw = crl_cache.get(&url).unwrap().clone();
-                match process_crl(&raw, scope, &subject_to_ski, &mut entries_map) {
-                    Ok((issuer_ski, last_update, n)) => {
-                        eprintln!("    {} revoked entries from {}", n, url);
-                        // mark this issuer covered (do not downgrade an ok to stale)
-                        coverage_map.insert((scope, issuer_ski), (last_update, None));
+    for der in &ders {
+        let (_, cert) = parse_x509_certificate(der).context("parse cert")?;
+        let subject_str = cert.subject().to_string();
+        let cert_aki = extract_aki(&cert);
+        let urls = extract_cdp_http_urls(&cert);
+        if urls.is_empty() {
+            eprintln!("  no HTTP CDP: {}", short_dn(&subject_str));
+            continue;
+        }
+        for url in urls {
+            if !crl_cache.contains_key(&url) {
+                eprintln!("  fetching CRL {}", url);
+                match fetch(&client, &url) {
+                    Ok(bytes) => {
+                        crl_cache.insert(url.clone(), bytes);
                     }
                     Err(e) => {
-                        eprintln!("    parse/process failed for {}: {}", url, e);
+                        eprintln!("    fetch failed: {}", e);
                         partial = true;
-                        mark_stale(&mut coverage_map, scope, cert_aki.as_ref(), now_ts);
+                        mark_stale(&mut coverage_map, cert_aki.as_ref(), now_ts);
+                        continue;
                     }
+                }
+            }
+            let raw = crl_cache.get(&url).unwrap().clone();
+            match process_crl(&raw, &subject_to_ski, &mut entries_map) {
+                Ok((issuer_ski, last_update, n)) => {
+                    eprintln!("    {} revoked entries from {}", n, url);
+                    // mark this issuer covered (do not downgrade an ok to stale)
+                    coverage_map.insert(issuer_ski, (last_update, None));
+                }
+                Err(e) => {
+                    eprintln!("    parse/process failed for {}: {}", url, e);
+                    partial = true;
+                    mark_stale(&mut coverage_map, cert_aki.as_ref(), now_ts);
                 }
             }
         }
@@ -214,11 +183,10 @@ fn main() -> Result<()> {
 
     let mut entries: Vec<Entry> = entries_map
         .into_iter()
-        .map(|((scope, ski, serial), dt)| Entry {
-            scope,
+        .map(|((ski, serial_number), dt)| Entry {
             issuer_ski: ski,
-            serial,
-            revocation_date: dt.unix_timestamp(),
+            serial_number,
+            revocation_date: Required(dt.unix_timestamp()),
             reason: None,
         })
         .collect();
@@ -234,41 +202,36 @@ fn main() -> Result<()> {
             if injected.len() == 1 { "y" } else { "ies" }
         );
         for e in &injected {
-            let scope = parse_scope(&e.scope)?;
             let ski = hex::decode(&e.issuer_ski)
                 .with_context(|| format!("decoding injected issuer_ski {}", e.issuer_ski))?;
-            let serial = hex::decode(&e.serial)
-                .with_context(|| format!("decoding injected serial {}", e.serial))?;
+            let serial_number = hex::decode(&e.serial_number)
+                .with_context(|| format!("decoding injected serial_number {}", e.serial_number))?;
             let rev = OffsetDateTime::parse(&e.revocation_date, &Rfc3339)
                 .with_context(|| format!("parsing injected revocation_date {}", e.revocation_date))?
                 .unix_timestamp();
             eprintln!(
-                "  + [{:?}] issuer_ski={} serial={} rev={}",
-                scope, e.issuer_ski, e.serial, e.revocation_date
+                "  + issuer_ski={} serial_number={} rev={}",
+                e.issuer_ski, e.serial_number, e.revocation_date
             );
             // an injected revocation is only authoritative if its issuer is covered
-            coverage_map
-                .entry((scope, ski.clone()))
-                .or_insert((now_ts, None));
+            coverage_map.entry(ski.clone()).or_insert((now_ts, None));
             entries.push(Entry {
-                scope,
                 issuer_ski: ski,
-                serial,
-                revocation_date: rev,
+                serial_number,
+                revocation_date: Required(rev),
                 reason: None,
             });
         }
         entries.sort_by(|a, b| {
-            (a.scope, &a.issuer_ski, &a.serial).cmp(&(b.scope, &b.issuer_ski, &b.serial))
+            (&a.issuer_ski, &a.serial_number).cmp(&(&b.issuer_ski, &b.serial_number))
         });
     }
 
     let covered_issuers: Vec<Coverage> = coverage_map
         .into_iter()
-        .map(|((scope, ski), (last_update, status))| Coverage {
-            scope,
+        .map(|(ski, (last_update, status))| Coverage {
             issuer_ski: ski,
-            last_crl_update: last_update,
+            last_update: Required(last_update),
             status,
         })
         .collect();
@@ -277,8 +240,8 @@ fn main() -> Result<()> {
     let artifact = Artifact {
         version: 1,
         trust_list_id: args.trust_list_id.clone(),
-        generated_at: now_ts,
-        next_update: next_update.unix_timestamp(),
+        generated_at: Required(now_ts),
+        next_update: Required(next_update.unix_timestamp()),
         partial: if partial { Some(true) } else { None },
         covered_issuers,
         entries,
@@ -377,21 +340,19 @@ fn main() -> Result<()> {
 fn debug_json(a: &Artifact) -> serde_json::Value {
     json!({
         "version": a.version,
-        "trust_list_id": a.trust_list_id,
-        "generated_at": iso(a.generated_at),
-        "next_update": iso(a.next_update),
+        "trustListId": a.trust_list_id,
+        "generatedAt": iso(a.generated_at.0),
+        "nextUpdate": iso(a.next_update.0),
         "partial": a.partial.unwrap_or(false),
-        "covered_issuers": a.covered_issuers.iter().map(|c| json!({
-            "scope": c.scope.as_str(),
-            "issuer_ski": hex::encode(&c.issuer_ski),
-            "last_crl_update": iso(c.last_crl_update),
+        "coveredIssuers": a.covered_issuers.iter().map(|c| json!({
+            "issuerSKI": hex::encode(&c.issuer_ski),
+            "lastUpdate": iso(c.last_update.0),
             "status": c.status.clone().unwrap_or_else(|| "ok".to_string()),
         })).collect::<Vec<_>>(),
         "entries": a.entries.iter().map(|e| json!({
-            "scope": e.scope.as_str(),
-            "issuer_ski": hex::encode(&e.issuer_ski),
-            "serial": hex::encode(&e.serial),
-            "revocation_date": iso(e.revocation_date),
+            "issuerSKI": hex::encode(&e.issuer_ski),
+            "serialNumber": hex::encode(&e.serial_number),
+            "revocationDate": iso(e.revocation_date.0),
         })).collect::<Vec<_>>(),
     })
 }
@@ -408,23 +369,14 @@ fn b64url(bytes: &[u8]) -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
 }
 
-fn parse_scope(s: &str) -> Result<Scope> {
-    match s {
-        "anchors" => Ok(Scope::Anchors),
-        "tsa" => Ok(Scope::Tsa),
-        other => bail!("unknown scope '{}' (expected 'anchors' or 'tsa')", other),
-    }
-}
-
 fn mark_stale(
-    coverage_map: &mut BTreeMap<(Scope, Vec<u8>), (i64, Option<String>)>,
-    scope: Scope,
+    coverage_map: &mut BTreeMap<Vec<u8>, (i64, Option<String>)>,
     cert_ski: Option<&Vec<u8>>,
     now_ts: i64,
 ) {
     if let Some(ski) = cert_ski {
         coverage_map
-            .entry((scope, ski.clone()))
+            .entry(ski.clone())
             .or_insert((now_ts, Some("stale".to_string())));
     }
 }
@@ -520,9 +472,8 @@ fn fetch(client: &reqwest::blocking::Client, url: &str) -> Result<Vec<u8>> {
 /// `(issuer SKI, thisUpdate as epoch seconds, entry count)`.
 fn process_crl(
     raw: &[u8],
-    scope: Scope,
     subject_to_ski: &HashMap<Vec<u8>, Vec<u8>>,
-    entries_map: &mut BTreeMap<(Scope, Vec<u8>, Vec<u8>), OffsetDateTime>,
+    entries_map: &mut BTreeMap<(Vec<u8>, Vec<u8>), OffsetDateTime>,
 ) -> Result<(Vec<u8>, i64, usize)> {
     // Accept either DER or PEM-encoded CRLs.
     let der_owned: Vec<u8> = if parse_x509_crl(raw).is_ok() {
@@ -545,7 +496,7 @@ fn process_crl(
         let serial = revoked.user_certificate.to_bytes_be();
         let rev_dt = OffsetDateTime::from_unix_timestamp(revoked.revocation_date.timestamp())
             .unwrap_or(OffsetDateTime::UNIX_EPOCH);
-        let key = (scope, issuer_ski.clone(), serial);
+        let key = (issuer_ski.clone(), serial);
         entries_map
             .entry(key)
             .and_modify(|d| {

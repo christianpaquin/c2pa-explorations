@@ -1,0 +1,8 @@
+[
+  {
+    "_comment": "Synthetic revocation of the TSA cert that timestamped CA.jpg, before its attested time; the timestamp is ignored informationally",
+    "issuer_ski": "ba16d96d4d852f7329769a2f758c6a208f9ec86f",
+    "serial_number": "0544aff3949d0839a6bfdb3f5fe56116",
+    "revocation_date": "2020-01-01T00:00:00Z"
+  }
+]
