@@ -1,14 +1,12 @@
 # Aggregated Revocation Artifact (ARA) for C2PA
 
-_draft 0.3_
+_draft 0.3.1_
 
 This document proposes an **Aggregated Revocation Artifact (ARA)** — a [CRLite](https://github.com/mozilla/crlite)-inspired mechanism for proving non-revocation of C2PA signing certificates. For more details on CRLite and how the C2PA environment differs, see [Appendix A](#appendix-a-background-on-crlite). The goal is to replace per-signature OCSP stapling with a single, periodically-refreshed, signed revocation artifact published alongside a [trust list](https://c2pa.org/conformance/) (the C2PA Trust List being the motivating case). Validators consult the local artifact at validation time and need no network call to a CA.
 
 Although C2PA is the motivating deployment, the design is deliberately **trust-list-neutral**: an ARA is bound to a particular trust list, covers that trust list's issuers, and is signed by that trust list's authority. A validator may consult several ARAs — one per trust list it honors — so the mechanism generalizes to any ecosystem that maintains a curated trust list.
 
-This began as exploratory work intended to demonstrate feasibility through a proof-of-concept. As of v0.3 a draft spec change implementing this mechanism has been prepared against the C2PA core specification, and this document has been revised to match what that draft actually specifies — see [Spec changes](#spec-changes).
-
-> **Naming note (v0.2).** Earlier drafts called this "CRLite for C2PA." I have renamed it to **Aggregated Revocation Artifact (ARA)** because the design is not CRLite: it carries no cascading-Bloom/Ribbon filter, it is revocation-date-aware rather than a pure set-membership test, and it is bound to a bounded trust list rather than the whole WebPKI. We borrow CRLite's *concept* — central aggregation of CRLs, a signed push to clients, and offline lookup — not its compression machinery.
+This began as exploratory work intended to demonstrate feasibility through a proof-of-concept. As of v0.3 a [draft spec change](https://github.com/christianpaquin/specs-core/tree/cpaquin/aggregated-revocation-artifact) implementing this mechanism has been prepared against the C2PA core specification, and this document has been revised to match what that draft actually specifies — see [Spec changes](#spec-changes).
 
 ## Justification
 
@@ -42,11 +40,11 @@ A trusted aggregator — naturally the same entity that publishes the relevant t
 
 Validators fetch the artifact on their normal trust-list refresh schedule, verify its signature, and consult it locally during manifest validation. No per-signature OCSP staple is needed for any certificate whose issuer is in the artifact's coverage set.
 
-**One artifact per trust list.** An ARA is bound to exactly one trust list. Earlier drafts (through v0.2.1) instead had a single artifact spanning both the claim-signing anchors and the TSA trust list, with each entry tagged by a `scope` field. That was dropped in v0.3: it contradicted this document's own trust-list-neutral framing (an ARA "is bound to a particular trust list"), and it is redundant, because the C2PA specification already requires the TSA trust anchor list to be kept separate from the list used for claim signers. The purpose an issuer's certificates serve is therefore determined by *which* trust list the artifact is bound to, and does not need recording inside the artifact.
+**One artifact per trust list.** An ARA is bound to exactly one trust list, and carries no `scope` field distinguishing claim-signing from time-stamping issuers. Tagging entries by purpose would contradict this document's trust-list-neutral framing (an ARA "is bound to a particular trust list"), and it is redundant, because the C2PA specification already requires the TSA trust anchor list to be kept separate from the list used for claim signers. The purpose an issuer's certificates serve is therefore determined by *which* trust list the artifact is bound to, and does not need recording inside the artifact.
 
-In practice this means the C2PA conformance program publishes **two** artifacts: one for the C2PA Trust List and one for the C2PA TSA Trust List. The cost is a second fetch; the benefit is that a validator can never apply claim-signing coverage to a time-stamping certificate, and the format loses a field.
+In practice this means the C2PA conformance program publishes **two** artifacts: one for the C2PA Trust List and one for the C2PA TSA Trust List. The cost is a second fetch; the benefit is that a validator can never apply claim-signing coverage to a time-stamping certificate.
 
-Dropping `scope` is safe even where one CA issues both claim-signing and time-stamping certificates. Such a CA appears in both artifacts, and — since a CRL is not partitioned by purpose — both may carry the same entries. That produces no false positives: serial numbers are unique per issuer, so `(issuer SKI, serial)` identifies exactly one certificate regardless of the purpose it was issued for.
+Binding each artifact to a single trust list is safe even where one CA issues both claim-signing and time-stamping certificates. Such a CA appears in both artifacts, and — since a CRL is not partitioned by purpose — both may carry the same entries. That produces no false positives: serial numbers are unique per issuer, so `(issuer SKI, serial)` identifies exactly one certificate regardless of the purpose it was issued for.
 
 ### Temporal model
 
@@ -72,7 +70,7 @@ ARA will not be adopted everywhere at once. Legacy signers, and signers whose is
 
 #### The coverage set
 
-The key addition in v0.2 is that an ARA enumerates not only the *revoked* certificates but also the **issuers it authoritatively covers**, with per-issuer freshness metadata (the timestamp of the last successfully fetched CRL for that issuer). This mirrors CRLite's notion of "enrolled" issuers: a revocation filter is only trustworthy for issuers whose CRLs were actually incorporated.
+An ARA enumerates not only the *revoked* certificates but also the **issuers it authoritatively covers**, with per-issuer freshness metadata (the timestamp of the last successfully fetched CRL for that issuer). This mirrors CRLite's notion of "enrolled" issuers: a revocation filter is only trustworthy for issuers whose CRLs were actually incorporated.
 
 The rule follows directly: **absence of an entry means "not revoked" only if the issuer is in the coverage set and that coverage is fresh.** If the issuer is not covered, the ARA is silent about it and the validator must fall back.
 
@@ -117,7 +115,7 @@ Both are normative in the spec draft: an issuer appears in the coverage set only
 
 #### Segmentation, and why it is not free
 
-Earlier drafts (through v0.2.1) proposed keeping the all-time list manageable by **segmenting by certificate expiry**:
+One way to keep the all-time list manageable would be to **segment by certificate expiry**:
 
 * **Active segment** — revocations for certificates that have **not yet expired**. Only these can gain *new* revocations, so this segment is small and changes between aggregation runs. Validators fetch it frequently.
 * **Immutable historical archive** — once a certificate expires, its revocation record is frozen (the `revocationDate` never changes and no new revocation can appear for it). Such records move into an append-only archive, partitioned for convenience (e.g., by year of expiry), published once and **cached indefinitely** by validators.
@@ -165,15 +163,15 @@ revocation-entry-map = {
 }
 ```
 
-The naming follows the conventions of the C2PA schema repository: rule names are kebab-case with a `-map` suffix, field names are camelCase, and map keys are quoted text strings. Note also that `scope` is gone, per [Overview](#overview) above.
+The naming follows the conventions of the C2PA schema repository: rule names are kebab-case with a `-map` suffix, field names are camelCase, and map keys are quoted text strings.
 
 The artifact is signed by the publisher as a `COSE_Sign1` over the CBOR encoding of `ara`. For the PoC the publisher is a freshly minted demo key; in production it would be the trust list's authority (for C2PA, the conformance program), using a key whose certificate is well-known to validators — analogous to the trust-list signing key.
 
 Notes on the encoding choices:
 
 * `issuerSKI` is chosen over the issuer's distinguished name because it is short, unambiguous, and directly matches the AKI extension on end-entity certificates, which is what the validator already has in hand. As byte strings (`bstr`) rather than hex text, SKI and serial are roughly half the size of the JSON form.
-* Dates use the CDDL `time` type — CBOR epoch seconds under tag 1 — rather than ISO-8601 strings: smaller, and unambiguous. Drafts through v0.2.1 wrote `~time`, which is the *untagged* form and so contradicted the accompanying "CBOR tag 1" comment; v0.3 uses the tagged `time`, consistent with the C2PA schemas' existing use of the tagged `tdate`.
-* `lastUpdate` was named `last-crl-update` through v0.2.1. It was generalized because nothing requires a publisher to source its revocation data from a CRL specifically.
+* Dates use the CDDL `time` type — CBOR epoch seconds under tag 1 — rather than ISO-8601 strings: smaller, and unambiguous. This is the tagged `time`, consistent with the C2PA schemas' existing use of the tagged `tdate`.
+* `lastUpdate` is named generically because nothing requires a publisher to source its revocation data from a CRL specifically.
 
 ### Validation procedure
 
@@ -189,7 +187,7 @@ If `T_sig` cannot be determined (no trusted timestamp), the validator falls back
 
 #### Time Stamping Authority certificates
 
-A validator **may** additionally check the TSA's own signing certificate, using an ARA bound to a trust list of Time Stamping Authorities. Two things differ from the claim-signing case, and drafts through v0.2.1 got both wrong by saying simply "repeat steps 2–5 for the TSA's signing certificate":
+A validator **may** additionally check the TSA's own signing certificate, using an ARA bound to a trust list of Time Stamping Authorities. Two things differ from the claim-signing case:
 
 * **The time used is the time attested by that time-stamp**, not the claim's `T_sig` and not `now`. This matches how the C2PA specification already checks the TSA certificate's *validity period*. Using `now` would mean that revoking a TSA certificate retroactively invalidates every time-stamp it ever issued, which contradicts the specification's position that time-stamps stay valid even after the TSA's credential expires.
 * **A revoked TSA certificate is not fatal to the claim.** The C2PA specification treats a failing time-stamp as *ignored* — recorded with an informational code, with validation continuing as though no time-stamp were present — never as grounds for rejecting the claim. A revoked TSA certificate is therefore reported informationally and the time-stamp discarded.
@@ -201,15 +199,15 @@ This check is optional because the C2PA specification explicitly does not requir
 * The aggregator runs **daily**, producing a new artifact each run.
 * Each artifact carries `nextUpdate = generatedAt + 7 days`, matching typical CA CRL semantics. The spec draft states this as a recommendation: `nextUpdate` shall be later than `generatedAt`, and should be no more than seven days after it.
 * Validators accept the artifact for an additional `grace_window` past `nextUpdate` before treating it as stale. The spec draft leaves this window to **local policy** rather than fixing a number, since the right tolerance depends on how often a given validator can reach the network. The PoC uses `grace_window = 30 days`, giving a total freshness tolerance of ~37 days from generation.
-* A validator **shall not** accept an artifact whose `generatedAt` is earlier than one it has already used for the same trust list. v0.2.1 had this only as a security consideration; the spec draft makes it a normative requirement, since it is what stops an attacker from rolling a validator back to a pre-revocation artifact.
+* A validator **shall not** accept an artifact whose `generatedAt` is earlier than one it has already used for the same trust list. The spec draft makes this a normative requirement, since it is what stops an attacker from rolling a validator back to a pre-revocation artifact.
 
 ### Relation to OCSP stapling
 
 In the long run the intent is for ARA to *replace* per-signature OCSP stapling for any certificate whose issuer is covered: clients sign without contacting an OCSP responder, and validators rely on the artifact. During the transition the two coexist, governed by the coverage set as described in [Backward compatibility](#backward-compatibility-and-coexistence): the ARA is authoritative for covered issuers, and the stapled OCSP response remains the fallback for certificates whose issuer is not covered.
 
-The spec draft is deliberately **additive** here, and this is a change from v0.2.1. All existing OCSP requirements stay exactly as they are; the ARA is added as a permitted means of satisfying the revocation check, and signers gain explicit permission to omit the staple when they know their issuer is covered. Crucially, coverage does not *suppress* a staple that is present: if both mechanisms run and either reports revocation, the claim is rejected. The PoC's behavior — skipping the staple entirely once the issuer is covered — is therefore an optimization a validator may choose, not something the spec mandates.
+The spec draft is deliberately **additive** here. All existing OCSP requirements stay exactly as they are; the ARA is added as a permitted means of satisfying the revocation check, and signers gain explicit permission to omit the staple when they know their issuer is covered. Crucially, coverage does not *suppress* a staple that is present: if both mechanisms run and either reports revocation, the claim is rejected. The PoC's behavior — skipping the staple entirely once the issuer is covered — is therefore an optimization a validator may choose, not something the spec mandates.
 
-One consequence worth recording: the C2PA prohibition on CRLs (`the claim generator shall not use Certificate Revocation Lists`) **stays in place**. Earlier drafts framed that prohibition as an obstacle. It is not: it binds the *claim generator*, which cannot reasonably download a CRL per signing operation, and it says nothing about a trust list authority that consults those same CRLs once per publication cycle on behalf of every validator. The spec draft keeps the prohibition and adds a note clarifying its scope.
+One consequence worth recording: the C2PA prohibition on CRLs (`the claim generator shall not use Certificate Revocation Lists`) **stays in place**, and is not an obstacle: it binds the *claim generator*, which cannot reasonably download a CRL per signing operation, and it says nothing about a trust list authority that consults those same CRLs once per publication cycle on behalf of every validator. The spec draft keeps the prohibition and adds a note clarifying its scope.
 
 ### Spec changes
 
@@ -224,7 +222,7 @@ A draft change against the C2PA core specification has been prepared. It makes t
 
 Two things that were expected to need spec text turned out not to:
 
-* **Publication URL convention.** v0.2.1 proposed a fixed sibling-URL naming scheme (e.g. `<trust-list>-revocation.cbor`). The draft instead says an artifact is obtained by the same means as the trust list it is bound to, and leaves those means out of scope — matching how the specification already declines to say how trust lists themselves are distributed. The naming convention is a conformance-program matter, not a spec matter.
+* **Publication URL convention.** The draft says an artifact is obtained by the same means as the trust list it is bound to, and leaves those means out of scope — matching how the specification already declines to say how trust lists themselves are distributed. The naming convention is a conformance-program matter, not a spec matter.
 * **Trust list identifiers.** Likewise, how identifiers are assigned to trust lists is left out of scope, so `trustListId` is specified as an opaque string.
 
 ## Security and privacy considerations
@@ -250,7 +248,7 @@ The spec change defines the artifact and how a validator interprets it. It delib
 ### Publication
 
 * **Identifiers.** Assign `trustListId` values for the two trust lists. The spec treats these as opaque, so any stable convention works; a URL is the obvious choice.
-* **Location and discovery.** Pick a URL convention alongside the trust list (v0.2.1 suggested `<trust-list>-revocation.cbor`). This was dropped from the spec on purpose, so it needs to live in program documentation.
+* **Location and discovery.** Pick a URL convention alongside the trust list. This was dropped from the spec on purpose, so it needs to live in program documentation.
 * **Cadence and freshness.** Confirm daily generation and `nextUpdate = generatedAt + 7 days`. The spec leaves the validator's grace window to local policy; publishing a recommended value gives implementers a default and makes behavior more predictable across the ecosystem.
 * **Hosting.** Availability target, CDN, and the fact that artifact fetches are now on the validation path for anyone who has stopped stapling. An outage degrades to the OCSP fallback, which is precisely the path that may no longer exist for some CAs.
 
@@ -379,11 +377,19 @@ For inspection and debugging only — the normative artifact is the CBOR/COSE_Si
 }
 ```
 
-Note that `partial` and the per-issuer `status` are linked: `partial` is `true` exactly when at least one covered issuer carries `"status": "stale"`. The example in v0.2.1 showed `partial: false` alongside a stale issuer, which is not a valid combination.
+Note that `partial` and the per-issuer `status` are linked: `partial` is `true` exactly when at least one covered issuer carries `"status": "stale"`.
 
 ## Change history
 
-### v0.3
+### v0.3.1 (2026-08-19)
+
+Editorial pass; no normative or format changes.
+
+* **Background on CRLite moved to an appendix.** The section is now [Appendix A](#appendix-a-background-on-crlite), with a pointer to it at the document's first mention of CRLite; the JSON projection became Appendix B.
+* **Trimmed inline version history.** Removed the running "a previous draft did X" asides from the body (the naming note, and the various `v0.2`/`v0.2.1` references), since they only distract a first-time reader. The rename rationale was folded into the v0.2 entry below, and this Change history remains the record of what changed between drafts.
+* **Reworded the single-artifact rationale** so it states the current design directly rather than describing the removal of the old `scope` field.
+
+### v0.3 (2026-08-17)
 
 Revised to match the draft spec change prepared against the C2PA core specification. The substantive changes all came out of reconciling this proposal with what the specification already says.
 
@@ -406,7 +412,7 @@ Revised to match the draft spec change prepared against the C2PA core specificat
 
 ### v0.2 (2026-06-09)
 
-* **Renamed** the mechanism from "CRLite for C2PA" to **Aggregated Revocation Artifact (ARA)**, and added a naming note explaining why it is not CRLite.
+* **Renamed** the mechanism from "CRLite for C2PA" to **Aggregated Revocation Artifact (ARA)**, because the design is not CRLite: it carries no cascading-Bloom/Ribbon filter, it is revocation-date-aware rather than a pure set-membership test, and it is bound to a bounded trust list rather than the whole WebPKI. It borrows CRLite's *concept* — central aggregation of CRLs, a signed push to clients, and offline lookup — not its compression machinery.
 * **OCSP deprecation.** Added an "OCSP is being deprecated in the WebPKI" subsection to *Justification*, framing C2PA's mandatory-OCSP requirement as a structural risk (CA/B Forum SC-063v4; Let's Encrypt's 2025 OCSP shutdown).
 * **CRLite background.** Added a *Background on CRLite* section with concrete scale, size, deployment, and Clubcard details, and the rationale for why C2PA does not need CRLite's compression.
 * **Backward compatibility.** Added a *Backward compatibility and coexistence* section introducing the **coverage set** (`covered-issuers`), a validator decision matrix for the OCSP-staple fallback, and generalization across multiple trust lists.
