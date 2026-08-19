@@ -1,16 +1,8 @@
 [
   {
     "_comment": "Synthetic revocation of the CA.jpg claim-signing cert (c2pa-rs fixture), 2020 → BEFORE the 2024-08-06 signing time → expect FAIL",
-    "scope": "anchors",
     "issuer_ski": "0c3280cae5966d4f1ffbf90b01d6a9e50cdc00e2",
-    "serial": "7e3e629adccfe7d99710135b5a48056972df8199",
+    "serial_number": "7e3e629adccfe7d99710135b5a48056972df8199",
     "revocation_date": "2020-01-01T00:00:00Z"
-  },
-  {
-    "_comment": "Synthetic revocation of the TSA cert that timestamped CA.jpg, AFTER the 2024-08-06 signing time → expect PASS (signature was made while still valid)",
-    "scope": "tsa",
-    "issuer_ski": "45eba2aff492cb82312d518ba7a7219df36dc80f",
-    "serial": "0e9b188ef9d02de7efdb50e20840185a",
-    "revocation_date": "2025-06-01T00:00:00Z"
   }
 ]

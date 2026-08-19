@@ -1,11 +1,12 @@
 use anyhow::{anyhow, bail, Context, Result};
 use base64::Engine as _;
+use ciborium::tag::Required;
 use clap::{Parser, ValueEnum};
 use coset::{CborSerializable, TaggedCborSerializable};
 use p256::ecdsa::{signature::Verifier, Signature, VerifyingKey};
 use p256::EncodedPoint;
 use serde::Deserialize;
-use serde_repr::Deserialize_repr;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 use time::format_description::well_known::Rfc3339;
@@ -55,6 +56,22 @@ struct Args {
     #[arg(long)]
     trust_list_id: String,
 
+    /// Optional TSA revocation artifact. Requires the matching TSA public key and trust-list ID.
+    #[arg(long)]
+    tsa_artifact: Option<PathBuf>,
+
+    /// Publisher public key for `--tsa-artifact`.
+    #[arg(long)]
+    tsa_pubkey: Option<PathBuf>,
+
+    /// Expected trust-list identifier for `--tsa-artifact`.
+    #[arg(long)]
+    tsa_trust_list_id: Option<String>,
+
+    /// Persistent JSON file used to reject artifact rollback per trust list.
+    #[arg(long)]
+    rollback_state: PathBuf,
+
     /// Days past `next_update` to still accept the artifact.
     #[arg(long, default_value_t = 30i64)]
     grace_days: i64,
@@ -67,15 +84,17 @@ struct Args {
     asset: PathBuf,
 }
 
-// ---- artifact (CBOR / COSE_Sign1 payload, kebab-case per the CDDL) ----------
+// ---- artifact (CBOR / COSE_Sign1 payload) ----------------------------------
+
+type CborTime = Required<i64, 1>;
 
 #[derive(Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "camelCase")]
 struct Artifact {
     version: u32,
     trust_list_id: String,
-    generated_at: i64,
-    next_update: i64,
+    generated_at: CborTime,
+    next_update: CborTime,
     #[serde(default)]
     partial: Option<bool>,
     #[serde(default)]
@@ -84,33 +103,26 @@ struct Artifact {
 }
 
 #[derive(Deserialize, Clone)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "camelCase")]
 struct Coverage {
-    scope: Scope,
+    #[serde(rename = "issuerSKI")]
     #[serde(with = "serde_bytes")]
     issuer_ski: Vec<u8>,
     #[allow(dead_code)]
-    last_crl_update: i64,
+    last_update: CborTime,
     #[serde(default)]
     status: Option<String>,
 }
 
 #[derive(Deserialize, Clone)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "camelCase")]
 struct Entry {
-    scope: Scope,
+    #[serde(rename = "issuerSKI")]
     #[serde(with = "serde_bytes")]
     issuer_ski: Vec<u8>,
     #[serde(with = "serde_bytes")]
-    serial: Vec<u8>,
-    revocation_date: i64,
-}
-
-#[derive(Deserialize_repr, Clone, Copy, PartialEq, Eq, Debug)]
-#[repr(u8)]
-enum Scope {
-    Anchors = 0,
-    Tsa = 1,
+    serial_number: Vec<u8>,
+    revocation_date: CborTime,
 }
 
 #[derive(Deserialize)]
@@ -144,10 +156,7 @@ impl Outcome {
     fn is_failure(&self) -> bool {
         matches!(
             self,
-            Outcome::Revoked { .. }
-                | Outcome::CoverageStale
-                | Outcome::TsaUnavailable { .. }
-                | Outcome::NotCoveredRefuse
+            Outcome::Revoked { .. } | Outcome::CoverageStale | Outcome::NotCoveredRefuse
         )
     }
 }
@@ -155,16 +164,31 @@ impl Outcome {
 fn main() -> Result<()> {
     let args = Args::parse();
 
+    let tsa_inputs = match (
+        &args.tsa_artifact,
+        &args.tsa_pubkey,
+        &args.tsa_trust_list_id,
+    ) {
+        (Some(artifact), Some(pubkey), Some(trust_list_id)) => {
+            Some((artifact, pubkey, trust_list_id))
+        }
+        (None, None, None) => None,
+        _ => {
+            bail!("--tsa-artifact, --tsa-pubkey, and --tsa-trust-list-id must be supplied together")
+        }
+    };
+
     let artifact = load_and_verify_artifact(
         &args.artifact,
         &args.pubkey,
         args.grace_days,
         &args.trust_list_id,
     )?;
+    enforce_rollback(&artifact, &args.rollback_state)?;
     println!("Artifact:");
     println!("  trust_list_id:   {}", artifact.trust_list_id);
-    println!("  generated_at:    {}", iso(artifact.generated_at));
-    println!("  next_update:     {}", iso(artifact.next_update));
+    println!("  generated_at:    {}", iso(artifact.generated_at.0));
+    println!("  next_update:     {}", iso(artifact.next_update.0));
     println!("  covered issuers: {}", artifact.covered_issuers.len());
     println!(
         "  entries:         {} ({})",
@@ -188,7 +212,7 @@ fn main() -> Result<()> {
         .signature_info()
         .ok_or_else(|| anyhow!("manifest has no signature info"))?;
 
-    let t_sig = match sig_info.time.as_ref() {
+    let timestamp_attested_time = match sig_info.time.as_ref() {
         Some(t) => {
             let dt = OffsetDateTime::parse(t, &Rfc3339)
                 .with_context(|| format!("parsing signing time '{}'", t))?;
@@ -232,68 +256,77 @@ fn main() -> Result<()> {
 
     let outcome = evaluate(
         &artifact,
-        Scope::Anchors,
         &issuer_ski,
         &serial,
-        t_sig,
+        timestamp_attested_time,
         staple_present,
         args.uncovered_policy,
     );
-    print_outcome("Claim-signing cert", &outcome);
+    print_outcome("Claim-signing cert", &outcome, false);
 
     println!();
-    let tsa_outcome = match extract_tsa_cert_der(cose_sign1_bytes.as_deref()) {
-        Ok(Some(tsa_der)) => {
-            let (_, tsa_cert) = parse_x509_certificate(&tsa_der)?;
-            let tsa_issuer_ski = extract_aki(&tsa_cert).ok_or_else(|| {
-                anyhow!("TSA cert lacks AKI extension; cannot determine issuer SKI")
-            })?;
-            let tsa_serial = tsa_cert.tbs_certificate.serial.to_bytes_be();
-            println!("TSA cert:");
-            println!("  subject:    {}", tsa_cert.subject());
-            println!("  issuer SKI: {}", hex::encode(&tsa_issuer_ski));
-            println!("  serial:     {}", hex::encode(&tsa_serial));
-            println!();
-            Some(evaluate(
-                &artifact,
-                Scope::Tsa,
-                &tsa_issuer_ski,
-                &tsa_serial,
-                t_sig,
-                staple_present,
-                args.uncovered_policy,
-            ))
+    let tsa_outcome = match tsa_inputs {
+        Some((tsa_artifact_path, tsa_pubkey_path, tsa_trust_list_id)) => {
+            let tsa_artifact = load_and_verify_artifact(
+                tsa_artifact_path,
+                tsa_pubkey_path,
+                args.grace_days,
+                tsa_trust_list_id,
+            )?;
+            enforce_rollback(&tsa_artifact, &args.rollback_state)?;
+            match extract_tsa_cert_der(cose_sign1_bytes.as_deref()) {
+                Ok(Some(tsa_der)) => {
+                    let (_, tsa_cert) = parse_x509_certificate(&tsa_der)?;
+                    let tsa_issuer_ski = extract_aki(&tsa_cert).ok_or_else(|| {
+                        anyhow!("TSA cert lacks AKI extension; cannot determine issuer SKI")
+                    })?;
+                    let tsa_serial = tsa_cert.tbs_certificate.serial.to_bytes_be();
+                    println!("TSA cert:");
+                    println!("  subject:    {}", tsa_cert.subject());
+                    println!("  issuer SKI: {}", hex::encode(&tsa_issuer_ski));
+                    println!("  serial:     {}", hex::encode(&tsa_serial));
+                    println!();
+                    Some(evaluate(
+                        &tsa_artifact,
+                        &tsa_issuer_ski,
+                        &tsa_serial,
+                        timestamp_attested_time,
+                        staple_present,
+                        args.uncovered_policy,
+                    ))
+                }
+                Ok(None) => Some(Outcome::TsaUnavailable {
+                    reason: cose_load_error
+                        .unwrap_or_else(|| "no sigTst/sigTst2 in COSE signature".to_string()),
+                }),
+                Err(e) => Some(Outcome::TsaUnavailable {
+                    reason: format!("extract failed: {:#}", e),
+                }),
+            }
         }
-        Ok(None) => Some(Outcome::TsaUnavailable {
-            reason: cose_load_error
-                .unwrap_or_else(|| "no sigTst/sigTst2 in COSE signature".to_string()),
-        }),
-        Err(e) => Some(Outcome::TsaUnavailable {
-            reason: format!("extract failed: {:#}", e),
-        }),
+        None => None,
     };
     if let Some(o) = &tsa_outcome {
-        print_outcome("TSA cert", o);
+        print_outcome("TSA cert", o, true);
     }
 
-    let failed = outcome.is_failure() || tsa_outcome.map(|o| o.is_failure()).unwrap_or(false);
+    let failed = outcome.is_failure();
     if failed {
         std::process::exit(1);
     }
     Ok(())
 }
 
-/// Apply the v0.2 coverage-set decision logic for one certificate.
+/// Apply the v0.3 coverage-set decision logic for one certificate.
 fn evaluate(
     artifact: &Artifact,
-    scope: Scope,
     issuer_ski: &[u8],
     serial: &[u8],
     t_sig: OffsetDateTime,
     staple_present: bool,
     policy: UncoveredPolicy,
 ) -> Outcome {
-    match coverage_status(artifact, scope, issuer_ski) {
+    match coverage_status(artifact, issuer_ski) {
         CoverageStatus::NotCovered => {
             if staple_present {
                 Outcome::NotCoveredStaple
@@ -307,8 +340,8 @@ fn evaluate(
         CoverageStatus::Stale => Outcome::CoverageStale,
         CoverageStatus::Fresh => {
             for e in &artifact.entries {
-                if e.scope == scope && e.issuer_ski == issuer_ski && e.serial == serial {
-                    let rev = OffsetDateTime::from_unix_timestamp(e.revocation_date)
+                if e.issuer_ski == issuer_ski && e.serial_number == serial {
+                    let rev = OffsetDateTime::from_unix_timestamp(e.revocation_date.0)
                         .unwrap_or(OffsetDateTime::UNIX_EPOCH);
                     return if t_sig >= rev {
                         Outcome::Revoked { date: rev }
@@ -322,9 +355,9 @@ fn evaluate(
     }
 }
 
-fn coverage_status(artifact: &Artifact, scope: Scope, issuer_ski: &[u8]) -> CoverageStatus {
+fn coverage_status(artifact: &Artifact, issuer_ski: &[u8]) -> CoverageStatus {
     for c in &artifact.covered_issuers {
-        if c.scope == scope && c.issuer_ski == issuer_ski {
+        if c.issuer_ski == issuer_ski {
             return if c.status.as_deref() == Some("stale") {
                 CoverageStatus::Stale
             } else {
@@ -335,14 +368,22 @@ fn coverage_status(artifact: &Artifact, scope: Scope, issuer_ski: &[u8]) -> Cove
     CoverageStatus::NotCovered
 }
 
-fn print_outcome(label: &str, o: &Outcome) {
+fn print_outcome(label: &str, o: &Outcome, tsa: bool) {
     match o {
+        Outcome::GoodStanding if tsa => println!(
+            "{} revocation check: PASS (issuer covered, not revoked)", label
+        ),
         Outcome::GoodStanding => println!(
-            "{} revocation check: PASS (issuer covered, not revoked)",
+            "{} revocation check: PASS [signingCredential.ara.notRevoked] (issuer covered, not revoked)",
             label
         ),
+        Outcome::Revoked { date } if tsa => println!(
+            "{} revocation check: INFORMATIONAL [timeStamp.ara.revoked] (revoked at {}, timestamp ignored)",
+            label,
+            iso_dt(date)
+        ),
         Outcome::Revoked { date } => println!(
-            "{} revocation check: FAIL (revoked at {}, before/at signing time)",
+            "{} revocation check: FAIL [signingCredential.ara.revoked] (revoked at {}, before/at signing time)",
             label,
             iso_dt(date)
         ),
@@ -352,23 +393,23 @@ fn print_outcome(label: &str, o: &Outcome) {
             iso_dt(date)
         ),
         Outcome::CoverageStale => println!(
-            "{} revocation check: FAIL (issuer covered but its CRL data is stale — cannot assert non-revocation)",
+            "{} revocation check: FAIL [signingCredential.ara.stale] (issuer covered but its revocation data is stale — cannot assert non-revocation)",
             label
         ),
         Outcome::TsaUnavailable { reason } => println!(
-            "{} revocation check: FAIL (TSA certificate unavailable: {})",
+            "{} revocation check: INFORMATIONAL (TSA certificate unavailable: {})",
             label, reason
         ),
         Outcome::NotCoveredStaple => println!(
-            "{} revocation check: PASS (issuer not covered; an OCSP staple is present — legacy path; staple consultation is out of scope for this PoC)",
+            "{} revocation check: PASS [signingCredential.ara.notCovered] (issuer not covered; an OCSP staple is present — legacy path; staple consultation is out of scope for this PoC)",
             label
         ),
         Outcome::NotCoveredWarn => println!(
-            "{} revocation check: PASS with WARNING (issuer not covered and no staple — cannot assert non-revocation; --uncovered-policy=warn)",
+            "{} revocation check: PASS with WARNING [signingCredential.ara.notCovered] (issuer not covered and no staple — cannot assert non-revocation; --uncovered-policy=warn)",
             label
         ),
         Outcome::NotCoveredRefuse => println!(
-            "{} revocation check: FAIL (issuer not covered and no staple; --uncovered-policy=refuse)",
+            "{} revocation check: FAIL [signingCredential.ara.notCovered] (issuer not covered and no staple; --uncovered-policy=refuse)",
             label
         ),
     }
@@ -584,7 +625,7 @@ fn load_and_verify_artifact(
     }
 
     let now = OffsetDateTime::now_utc();
-    let next_update = OffsetDateTime::from_unix_timestamp(artifact.next_update)
+    let next_update = OffsetDateTime::from_unix_timestamp(artifact.next_update.0)
         .context("artifact next_update out of range")?;
     let deadline = next_update + time::Duration::days(grace_days);
     if now > deadline {
@@ -597,6 +638,38 @@ fn load_and_verify_artifact(
     }
 
     Ok(artifact)
+}
+
+fn enforce_rollback(artifact: &Artifact, state_path: &PathBuf) -> Result<()> {
+    let mut state: BTreeMap<String, i64> = if state_path.exists() {
+        let raw = fs::read_to_string(state_path)
+            .with_context(|| format!("reading rollback state {}", state_path.display()))?;
+        serde_json::from_str(&raw)
+            .with_context(|| format!("parsing rollback state {}", state_path.display()))?
+    } else {
+        BTreeMap::new()
+    };
+
+    if let Some(previous) = state.get(&artifact.trust_list_id) {
+        if artifact.generated_at.0 < *previous {
+            bail!(
+                "artifact rollback rejected for trust list '{}': generatedAt {} is earlier than previously used {}",
+                artifact.trust_list_id,
+                iso(artifact.generated_at.0),
+                iso(*previous)
+            );
+        }
+    }
+
+    state.insert(artifact.trust_list_id.clone(), artifact.generated_at.0);
+    if let Some(parent) = state_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)?;
+        }
+    }
+    fs::write(state_path, serde_json::to_string_pretty(&state)?)
+        .with_context(|| format!("writing rollback state {}", state_path.display()))?;
+    Ok(())
 }
 
 fn load_pubkey(pubkey_path: &PathBuf) -> Result<VerifyingKey> {
